@@ -1,0 +1,27 @@
+# Screen capture configuration
+capture:
+  interval_seconds: 30          # How often to capture screen
+  quality: 85                   # JPEG quality (1-100)
+  max_width: 1024               # Resize to max width (preserves aspect ratio)
+  enabled: true                 # Start capturing immediately
+
+# LM Studio configuration
+llm:
+  base_url: "http://localhost:1234/v1"  # LM Studio default
+  model: "lfm2-vl-450m"                  # Use the model loaded in LM Studio
+  max_tokens: 512
+  temperature: 0.7
+  timeout_seconds: 30
+
+# Mem0 configuration (pip installed: pip install mem0ai)
+memory:
+  api_key: ""                   # Leave empty for local Mem0
+  base_url: "http://localhost:8000"  # Mem0 server URL
+  user_id: "default_user"
+  collection_name: "screen_memories"
+
+# App behavior
+app:
+  verbose: false                # Enable debug logging
+  process_on_capture: true      # Process with LLM on every capture
+  memory_window: 10             # Last N memories to include as context

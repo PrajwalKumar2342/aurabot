@@ -1,0 +1,28 @@
+# Binaries
+screen-memory-assistant
+*.exe
+build/
+dist/
+
+# Test artifacts
+*.test
+*.out
+coverage.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config (optional - if contains secrets)
+# config.local.yaml
+
+# Temp files
+*.tmp
+*.log
