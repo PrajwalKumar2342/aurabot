@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"screen-memory-assistant/internal/capture"
-	"screen-memory-assistant/internal/config"
-	"screen-memory-assistant/internal/llm"
-	"screen-memory-assistant/internal/memory"
+	"screen-memory-supermemory/internal/capture"
+	"screen-memory-supermemory/internal/config"
+	"screen-memory-supermemory/internal/llm"
+	"screen-memory-supermemory/internal/memory"
 )
 
 // Service orchestrates the screen capture and memory pipeline
@@ -25,6 +25,9 @@ type Service struct {
 	stopChan  chan struct{}
 	wg        sync.WaitGroup
 	lastState string
+
+	// Rate limiting for LLM vision requests
+	visionSem chan struct{}
 }
 
 // New creates a new service instance
@@ -34,11 +37,12 @@ func New(cfg *config.Config) (*Service, error) {
 	memoryStore := memory.NewStore(&cfg.Memory)
 
 	return &Service{
-		config:   cfg,
-		capturer: capturer,
-		llm:      llmClient,
-		memory:   memoryStore,
-		stopChan: make(chan struct{}),
+		config:    cfg,
+		capturer:  capturer,
+		llm:       llmClient,
+		memory:    memoryStore,
+		stopChan:  make(chan struct{}),
+		visionSem: make(chan struct{}, 1), // Only 1 vision request at a time
 	}, nil
 }
 
@@ -49,7 +53,7 @@ func (s *Service) Run(ctx context.Context) error {
 		return fmt.Errorf("dependency check failed: %w", err)
 	}
 
-	log.Println("Screen Memory Assistant started")
+	log.Println("Screen Memory Assistant (Supermemory Edition) started")
 	log.Printf("Capture interval: %ds", s.config.Capture.IntervalSeconds)
 	log.Printf("Platform: %s", capture.GetPlatform())
 
@@ -118,6 +122,14 @@ func (s *Service) processCapture(ctx context.Context) {
 
 // analyzeAndStore sends to LLM and stores in memory
 func (s *Service) analyzeAndStore(ctx context.Context, cap *capture.Capture) {
+	// Rate limit: only 1 vision request at a time to prevent LM Studio overload
+	select {
+	case s.visionSem <- struct{}{}:
+		defer func() { <-s.visionSem }()
+	case <-ctx.Done():
+		return
+	}
+
 	// Get recent memories for context
 	memories, err := s.memory.GetRecent(s.config.App.MemoryWindow)
 	if err != nil && s.config.App.Verbose {
@@ -144,7 +156,7 @@ func (s *Service) analyzeAndStore(ctx context.Context, cap *capture.Capture) {
 	memoryContent := fmt.Sprintf("%s | Context: %s | Intent: %s",
 		result.Summary, result.Context, result.UserIntent)
 
-	// Store in Mem0
+	// Store in Supermemory
 	metadata := memory.Metadata{
 		Timestamp:   cap.Timestamp.Format(time.RFC3339),
 		Context:     result.Context,
@@ -173,16 +185,21 @@ func (s *Service) Chat(ctx context.Context, message string) (string, error) {
 	// Get relevant memories
 	results, err := s.memory.Search(message, s.config.App.MemoryWindow)
 	if err != nil {
-		if s.config.App.Verbose {
-			log.Printf("Memory search failed: %v", err)
+		log.Printf("[DEBUG] Memory search failed: %v", err)
+	} else {
+		log.Printf("[DEBUG] Memory search returned %d results", len(results))
+		for i, r := range results {
+			log.Printf("[DEBUG] Result %d: ID=%s, Content=%.100s...", i+1, r.Memory.ID, r.Memory.Content)
 		}
 	}
 
 	// Extract memory contents
 	var memories []string
-	for _, r := range results {
+	for i, r := range results {
+		log.Printf("[DEBUG] Memory %d: ID=%s, ContentLength=%d, ContentPreview=%.50s", i+1, r.Memory.ID, len(r.Memory.Content), r.Memory.Content)
 		memories = append(memories, r.Memory.Content)
 	}
+	log.Printf("[DEBUG] Extracted %d memories for prompt", len(memories))
 
 	// Generate response
 	return s.llm.GenerateResponse(ctx, message, memories)
@@ -209,11 +226,16 @@ func (s *Service) checkDependencies(ctx context.Context) error {
 	}
 	log.Println("✓ LLM connected")
 
-	// Check Mem0
+	// Check Supermemory
 	if err := s.memory.CheckHealth(); err != nil {
-		return fmt.Errorf("Mem0 not available at %s: %w", s.config.Memory.BaseURL, err)
+		return fmt.Errorf("Supermemory not available at %s: %w", s.config.Memory.BaseURL, err)
 	}
-	log.Println("✓ Mem0 connected")
+	log.Println("✓ Supermemory connected")
+
+	// Check if API key is set
+	if s.config.Memory.APIKey == "" {
+		log.Println("⚠ Warning: SUPERMEMORY_API_KEY not set. Make sure the server has it configured.")
+	}
 
 	return nil
 }

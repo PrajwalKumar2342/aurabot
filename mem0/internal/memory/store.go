@@ -36,6 +36,12 @@ type SearchResult struct {
 	Distance  float64 `json:"distance"`
 }
 
+// parseTime parses an ISO8601 time string, returning zero time on error
+func parseTime(s string) time.Time {
+	t, _ := time.Parse(time.RFC3339, s)
+	return t
+}
+
 // Store handles Mem0 operations
 type Store struct {
 	config     *config.MemoryConfig
@@ -143,12 +149,38 @@ func (s *Store) Search(query string, limit int) ([]SearchResult, error) {
 		return nil, fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
-	var results []SearchResult
-	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+	var result struct {
+		Results []struct {
+			Memory   string    `json:"memory"`
+			ID       string    `json:"id"`
+			UserID   string    `json:"user_id"`
+			Score    float64   `json:"score"`
+			Distance float64   `json:"distance"`
+			Metadata Metadata  `json:"metadata"`
+			CreatedAt string   `json:"created_at"`
+		} `json:"results"`
+	}
+	
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
+	
+	var searchResults []SearchResult
+	for _, r := range result.Results {
+		searchResults = append(searchResults, SearchResult{
+			Memory: Memory{
+				ID:        r.ID,
+				Content:   r.Memory,
+				UserID:    r.UserID,
+				Metadata:  r.Metadata,
+				CreatedAt: parseTime(r.CreatedAt),
+			},
+			Score:    r.Score,
+			Distance: r.Distance,
+		})
+	}
 
-	return results, nil
+	return searchResults, nil
 }
 
 // GetRecent retrieves the most recent memories

@@ -23,6 +23,7 @@ Thumbs.db
 # Config (contains user-specific settings)
 config.yaml
 config.local.yaml
+.env
 
 # Local data storage
 qdrant_storage/
@@ -34,3 +35,23 @@ qdrant_storage/
 # Personal/Development files
 kimi-workflow.md
 MEM0_SERVER_README.md
+
+# Downloaded models (large files)
+models/*
+!models/.gitignore
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env

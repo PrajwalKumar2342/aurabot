@@ -3,17 +3,20 @@ package llm
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sashabaranov/go-openai"
-	"screen-memory-assistant/internal/config"
+	"screen-memory-supermemory/internal/config"
 )
 
 // Client wraps the OpenAI-compatible LLM API
 type Client struct {
-	client *openai.Client
-	config *config.LLMConfig
+	visionClient *openai.Client // LM Studio for vision
+	chatClient   *openai.Client // Cerebras for chat/text
+	config       *config.LLMConfig
 }
 
 // VisionMessage represents a message with image content
@@ -34,12 +37,25 @@ type AnalysisResult struct {
 
 // NewClient creates a new LLM client
 func NewClient(cfg *config.LLMConfig) *Client {
-	config := openai.DefaultConfig("")
-	config.BaseURL = cfg.BaseURL
+	// Vision client (LM Studio) - for image analysis
+	visionConfig := openai.DefaultConfig("")
+	visionConfig.BaseURL = cfg.BaseURL
+
+	// Chat client (Cerebras) - for text/chat
+	var chatClient *openai.Client
+	if cfg.CerebrasAPIKey != "" {
+		chatConfig := openai.DefaultConfig(cfg.CerebrasAPIKey)
+		chatConfig.BaseURL = "https://api.cerebras.ai/v1"
+		chatClient = openai.NewClientWithConfig(chatConfig)
+	} else {
+		// Fallback to LM Studio if no Cerebras key
+		chatClient = openai.NewClientWithConfig(visionConfig)
+	}
 
 	return &Client{
-		client: openai.NewClientWithConfig(config),
-		config: cfg,
+		visionClient: openai.NewClientWithConfig(visionConfig),
+		chatClient:   chatClient,
+		config:       cfg,
 	}
 }
 
@@ -102,7 +118,7 @@ Respond in this exact JSON format:
 		Temperature: c.config.Temperature,
 	}
 
-	resp, err := c.client.CreateChatCompletion(ctx, req)
+	resp, err := c.visionClient.CreateChatCompletion(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("LLM API error: %w", err)
 	}
@@ -120,7 +136,7 @@ func (c *Client) GenerateResponse(ctx context.Context, prompt string, memories [
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(c.config.TimeoutSeconds)*time.Second)
 	defer cancel()
 
-	systemPrompt := "You are a helpful AI assistant that knows the user well through their screen activity history. Be concise and contextually aware."
+	systemPrompt := "You are a helpful AI assistant that knows the user well through their screen activity history. Answer based ONLY on the provided memory context. If the information isn't in the memories, say you don't know. Be concise."
 
 	// Include memories as context
 	userPrompt := prompt
@@ -129,11 +145,25 @@ func (c *Client) GenerateResponse(ctx context.Context, prompt string, memories [
 		for _, m := range memories {
 			memoryContext += "- " + m + "\n"
 		}
-		userPrompt = memoryContext + "\nUser: " + prompt
+		userPrompt = memoryContext + "\nUser question: " + prompt + "\n\nAnswer based only on the activity history above."
+	}
+
+	// DEBUG: Print the full prompt
+	fmt.Println("\n" + strings.Repeat("=", 70))
+	fmt.Println("FULL PROMPT SENT TO LLM:")
+	fmt.Println(strings.Repeat("=", 70))
+	fmt.Printf("System:\n%s\n\n", systemPrompt)
+	fmt.Printf("User:\n%s\n", userPrompt)
+	fmt.Println(strings.Repeat("=", 70))
+
+	// Use Cerebras model for chat
+	model := c.config.CerebrasModel
+	if model == "" {
+		model = c.config.Model
 	}
 
 	req := openai.ChatCompletionRequest{
-		Model: c.config.Model,
+		Model: model,
 		Messages: []openai.ChatCompletionMessage{
 			{
 				Role:    openai.ChatMessageRoleSystem,
@@ -148,7 +178,7 @@ func (c *Client) GenerateResponse(ctx context.Context, prompt string, memories [
 		Temperature: c.config.Temperature,
 	}
 
-	resp, err := c.client.CreateChatCompletion(ctx, req)
+	resp, err := c.chatClient.CreateChatCompletion(ctx, req)
 	if err != nil {
 		return "", fmt.Errorf("LLM API error: %w", err)
 	}
@@ -162,7 +192,7 @@ func (c *Client) GenerateResponse(ctx context.Context, prompt string, memories [
 
 // parseResponse extracts structured data from LLM text response
 func (c *Client) parseResponse(content string) *AnalysisResult {
-	// Simple parsing - in production, use proper JSON parsing
+	// Store the full LLM output without truncation
 	result := &AnalysisResult{
 		Summary:     content,
 		Context:     "unknown",
@@ -171,17 +201,42 @@ func (c *Client) parseResponse(content string) *AnalysisResult {
 		UserIntent:  "unknown",
 	}
 
-	// Try to extract structured fields if JSON-like
-	// For now, use the full content as summary
-	if len(content) > 500 {
-		result.Summary = content[:500] + "..."
+	// Try to parse JSON response if structured
+	// This allows LFM-2 to return proper JSON that we can extract fields from
+	var jsonResult map[string]interface{}
+	if err := json.Unmarshal([]byte(content), &jsonResult); err == nil {
+		if summary, ok := jsonResult["summary"].(string); ok {
+			result.Summary = summary
+		}
+		if context, ok := jsonResult["context"].(string); ok {
+			result.Context = context
+		}
+		if userIntent, ok := jsonResult["user_intent"].(string); ok {
+			result.UserIntent = userIntent
+		}
+		// Handle arrays
+		if activities, ok := jsonResult["activities"].([]interface{}); ok {
+			for _, a := range activities {
+				if s, ok := a.(string); ok {
+					result.Activities = append(result.Activities, s)
+				}
+			}
+		}
+		if keyElements, ok := jsonResult["key_elements"].([]interface{}); ok {
+			for _, e := range keyElements {
+				if s, ok := e.(string); ok {
+					result.KeyElements = append(result.KeyElements, s)
+				}
+			}
+		}
 	}
 
 	return result
 }
 
-// CheckHealth verifies the LLM endpoint is available
+// CheckHealth verifies the LLM endpoints are available
 func (c *Client) CheckHealth(ctx context.Context) error {
+	// Check vision client (LM Studio)
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -196,6 +251,19 @@ func (c *Client) CheckHealth(ctx context.Context) error {
 		MaxTokens: 5,
 	}
 
-	_, err := c.client.CreateChatCompletion(ctx, req)
-	return err
+	_, err := c.visionClient.CreateChatCompletion(ctx, req)
+	if err != nil {
+		return fmt.Errorf("vision client: %w", err)
+	}
+
+	// Check chat client (Cerebras) if configured
+	if c.config.CerebrasAPIKey != "" {
+		req.Model = c.config.CerebrasModel
+		_, err = c.chatClient.CreateChatCompletion(ctx, req)
+		if err != nil {
+			return fmt.Errorf("chat client: %w", err)
+		}
+	}
+
+	return nil
 }

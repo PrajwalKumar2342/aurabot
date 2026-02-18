@@ -19,6 +19,8 @@ type Config struct {
 type CaptureConfig struct {
 	IntervalSeconds int  `yaml:"interval_seconds"`
 	Quality         int  `yaml:"quality"`
+	MaxWidth        int  `yaml:"max_width"`
+	MaxHeight       int  `yaml:"max_height"`
 	Enabled         bool `yaml:"enabled"`
 }
 
@@ -29,6 +31,9 @@ type LLMConfig struct {
 	MaxTokens      int     `yaml:"max_tokens"`
 	Temperature    float32 `yaml:"temperature"`
 	TimeoutSeconds int     `yaml:"timeout_seconds"`
+	// Cerebras config for chat/LLM tasks
+	CerebrasAPIKey string  `yaml:"cerebras_api_key"`
+	CerebrasModel  string  `yaml:"cerebras_model"`
 }
 
 // MemoryConfig holds Mem0 settings
@@ -51,7 +56,9 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Capture: CaptureConfig{
 			IntervalSeconds: 30,
-			Quality:         85,
+			Quality:         60,
+			MaxWidth:        1280,  // 720p width - LFM-2 works best with this
+			MaxHeight:       720,   // 720p height
 			Enabled:         true,
 		},
 		LLM: LLMConfig{
@@ -60,6 +67,8 @@ func Load() (*Config, error) {
 			MaxTokens:      512,
 			Temperature:    0.7,
 			TimeoutSeconds: 30,
+			CerebrasAPIKey: os.Getenv("CEREBRAS_API_KEY"),
+			CerebrasModel:  "gpt-oss-120b",
 		},
 		Memory: MemoryConfig{
 			APIKey:         "",
@@ -94,6 +103,9 @@ func Load() (*Config, error) {
 	}
 	if val := os.Getenv("MEM0_API_KEY"); val != "" {
 		cfg.Memory.APIKey = val
+	}
+	if val := os.Getenv("CEREBRAS_API_KEY"); val != "" {
+		cfg.LLM.CerebrasAPIKey = val
 	}
 
 	return cfg, nil

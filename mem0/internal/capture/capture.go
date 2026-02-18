@@ -12,6 +12,44 @@ import (
 	"screen-memory-assistant/internal/config"
 )
 
+// resizeImage scales down image if it exceeds max dimensions while maintaining aspect ratio
+func resizeImage(img image.Image, maxWidth, maxHeight int) image.Image {
+	if maxWidth <= 0 || maxHeight <= 0 {
+		return img
+	}
+
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+
+	// Check if resizing is needed
+	if width <= maxWidth && height <= maxHeight {
+		return img
+	}
+
+	// Calculate scaling factor to fit within bounds while maintaining aspect ratio
+	scaleX := float64(maxWidth) / float64(width)
+	scaleY := float64(maxHeight) / float64(height)
+	scale := scaleX
+	if scaleY < scaleX {
+		scale = scaleY
+	}
+
+	newWidth := int(float64(width) * scale)
+	newHeight := int(float64(height) * scale)
+
+	// Simple nearest-neighbor resize
+	resized := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
+	for y := 0; y < newHeight; y++ {
+		for x := 0; x < newWidth; x++ {
+			srcX := int(float64(x) / scale)
+			srcY := int(float64(y) / scale)
+			resized.Set(x, y, img.At(srcX, srcY))
+		}
+	}
+	return resized
+}
+
 // Capture represents a screen capture with metadata
 type Capture struct {
 	Timestamp  time.Time
@@ -93,13 +131,18 @@ func (c *Capturer) CapturePrimary() (*Capture, error) {
 	}, nil
 }
 
-// compress converts image to JPEG
+// compress converts image to JPEG (with optional resize)
 func (c *Capturer) compress(img image.Image) ([]byte, error) {
 	var buf bytes.Buffer
 
+	// Resize if configured
+	if c.config.MaxWidth > 0 || c.config.MaxHeight > 0 {
+		img = resizeImage(img, c.config.MaxWidth, c.config.MaxHeight)
+	}
+
 	quality := c.config.Quality
 	if quality <= 0 || quality > 100 {
-		quality = 85
+		quality = 60
 	}
 
 	opts := &jpeg.Options{Quality: quality}

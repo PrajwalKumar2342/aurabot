@@ -1,7 +1,18 @@
 #!/usr/bin/env python3
 """
-Mem0 REST API Server using LM Studio for local embeddings and LLM.
+Mem0 REST API Server using Cerebras for LLM and LM Studio for local embeddings.
 Compatible with screen-memory-assistant Go application.
+
+Configuration:
+- LLM: Cerebras API (Qwen 3 235B Instruct) - falls back to LM Studio if no API key
+- Embeddings: LM Studio (nomic-embed-text v1.5) - local
+- Vector Store: Qdrant - local storage
+
+Environment Variables:
+- CEREBRAS_API_KEY: Your Cerebras API key (get from https://cloud.cerebras.ai)
+- LM_STUDIO_URL: LM Studio server URL (default: http://localhost:1234/v1)
+- MEM0_HOST: Server host (default: localhost)
+- MEM0_PORT: Server port (default: 8000)
 """
 
 import os
@@ -13,13 +24,23 @@ from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    print("[INFO] Loaded environment from .env file")
+except ImportError:
+    print("[INFO] python-dotenv not installed, using system environment variables only")
+    print("       To use .env file: pip install python-dotenv")
+
 # Configuration
 HOST = os.getenv("MEM0_HOST", "localhost")
 PORT = int(os.getenv("MEM0_PORT", "8000"))
 LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:1234/v1")
+CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
 
 print("="*60)
-print("Mem0 REST API Server (LM Studio Edition)")
+print("Mem0 REST API Server (Cerebras LLM + LM Studio Embeddings)")
 print("="*60)
 
 # Check LM Studio availability
@@ -53,18 +74,11 @@ except ImportError:
     print("ERROR: mem0ai not installed. Run: pip install mem0ai")
     sys.exit(1)
 
-# Monkey-patch OpenAI LLM to fix response_format compatibility with LM Studio
-_original_generate_response = OpenAILLM.generate_response
-
-def _patched_generate_response(self, messages, response_format=None, **kwargs):
-    # Remove response_format as LM Studio doesn't support "json_object" type
-    # It only accepts "json_schema" or "text"
-    return _original_generate_response(self, messages, **kwargs)
-
-OpenAILLM.generate_response = _patched_generate_response
-
-# Also patch the OpenAI client creation to handle response_format
+# Apply patches for LLM compatibility
+# Cerebras: Remove 'store' parameter which OpenAI client adds but Cerebras doesn't support
+# LM Studio: Remove 'response_format' parameter
 import openai
+
 _original_openai_init = openai.OpenAI.__init__
 
 def _patched_openai_init(self, *args, **kwargs):
@@ -73,21 +87,35 @@ def _patched_openai_init(self, *args, **kwargs):
     if hasattr(self, 'chat') and hasattr(self.chat, 'completions'):
         orig_create = self.chat.completions.create
         def _patched_create(*args, **kwargs):
-            kwargs.pop('response_format', None)
+            # Remove 'store' parameter (Cerebras doesn't support it)
+            kwargs.pop('store', None)
+            # Remove 'response_format' for non-OpenAI providers
+            if not CEREBRAS_API_KEY:
+                kwargs.pop('response_format', None)
             return orig_create(*args, **kwargs)
         self.chat.completions.create = _patched_create
 
 openai.OpenAI.__init__ = _patched_openai_init
-print("[INFO] Patched OpenAI LLM for LM Studio compatibility")
 
-# Note: We use infer=False when calling memory.add() to skip LLM fact extraction
-# This avoids issues with lfm2-vl-450m not producing expected JSON format
-# The Go app handles vision/LLM analysis; mem0 just stores embeddings for search
+if CEREBRAS_API_KEY:
+    print("[INFO] Patched OpenAI client for Cerebras compatibility (removed 'store' parameter)")
+else:
+    print("[INFO] Patched OpenAI client for LM Studio compatibility")
 
-# Configure Mem0 to use LM Studio for embeddings
-# Note: The Go app handles vision/LLM analysis. Mem0 only needs embeddings for storage.
+# Note: When using LM Studio fallback, we use infer=False to skip LLM fact extraction
+# as local models may not produce expected JSON format. With Cerebras, fact extraction works properly.
+
+# Configure Mem0
+# - LLM: Cerebras (Qwen 3 235B Instruct) for memory extraction
+# - Embeddings: LM Studio (nomic-embed-text) for local embedding generation
+# - Vector Store: Qdrant for local storage
 print()
-print("Configuring Mem0 for embedding storage...")
+print("Configuring Mem0...")
+
+if not CEREBRAS_API_KEY:
+    print("[WARN] CEREBRAS_API_KEY not set. Falling back to LM Studio for LLM.")
+    print("       Get your API key from: https://cloud.cerebras.ai")
+    print()
 
 config = {
     "vector_store": {
@@ -101,39 +129,30 @@ config = {
     "embedder": {
         "provider": "openai",
         "config": {
-            "model": "text-embedding-nomic-embed-text-v1.5",
+            "model": "text-embedding-nomic-embed-text-v1.5-embedding",
             "api_key": "not-needed",
             "openai_base_url": LM_STUDIO_URL,
         }
     },
     "llm": {
-        "provider": "openai",  # Use openai provider for LM Studio compatibility
+        "provider": "openai",  # Cerebras is OpenAI-compatible
         "config": {
-            "model": "lfm2-vl-450m",
-            "api_key": "not-needed",
-            "openai_base_url": LM_STUDIO_URL,
-            "temperature": 0.1,
-            "max_tokens": 256,
+            "model": "gpt-oss-120b",
+            "api_key": CEREBRAS_API_KEY if CEREBRAS_API_KEY else "not-needed",
+            "openai_base_url": "https://api.cerebras.ai/v1" if CEREBRAS_API_KEY else LM_STUDIO_URL,
+            "temperature": 0.7,
+            "max_tokens": 4096,
         }
     },
-    # Disable custom fact extraction prompts that may cause JSON parsing issues with LM Studio
-    "custom_prompt": {
-        "facts": None  # Use default/simple fact extraction
-    }
 }
-
-# Override with OpenAI if key is available (optional)
-if os.getenv("OPENAI_API_KEY"):
-    print("OPENAI_API_KEY found - will use OpenAI for better performance")
-    config = {}  # Use defaults
 
 # Initialize Mem0
 try:
-    if config:
-        memory = Memory.from_config(config_dict=config)
-    else:
-        memory = Memory()
+    memory = Memory.from_config(config_dict=config)
     print("[OK] Mem0 initialized successfully")
+    print(f"     LLM: {'Cerebras (gpt-oss-120b)' if CEREBRAS_API_KEY else 'LM Studio (local)'}")
+    print(f"     Embeddings: LM Studio (nomic-embed-text)")
+    print(f"     Vector Store: Qdrant (./qdrant_storage)")
 except Exception as e:
     print(f"[FAIL] Failed to initialize Mem0: {e}")
     sys.exit(1)
@@ -172,7 +191,12 @@ class Mem0Handler(BaseHTTPRequestHandler):
             self.send_json_response({
                 "status": "ok",
                 "timestamp": datetime.now().isoformat(),
-                "lm_studio": LM_STUDIO_URL
+                "llm_provider": "cerebras" if CEREBRAS_API_KEY else "lm_studio",
+                "llm_model": "gpt-oss-120b" if CEREBRAS_API_KEY else "local",
+                "embedder_provider": "lm_studio",
+                "embedder_model": "nomic-embed-text-v1.5",
+                "vector_store": "qdrant",
+                "lm_studio_url": LM_STUDIO_URL
             })
             return
 
@@ -252,15 +276,15 @@ class Mem0Handler(BaseHTTPRequestHandler):
 
                 content = " ".join([m.get("content", "") for m in messages if m.get("content")])
 
-                # Add memory with infer=False to skip LLM fact extraction
-                # lfm2-vl-450m doesn't produce expected format for fact extraction
-                # The Go app already handles vision/LLM analysis, we just store embeddings
+                # Add memory
+                # infer=True enables LLM fact extraction (works well with Cerebras)
+                # infer=False skips fact extraction (fallback for LM Studio)
                 result = memory.add(
                     messages=messages,
                     user_id=user_id,
                     agent_id=agent_id,
                     metadata=metadata,
-                    infer=False  # Skip LLM fact extraction, store raw content
+                    infer=bool(CEREBRAS_API_KEY)  # Enable fact extraction if using Cerebras
                 )
 
                 response = {
@@ -295,19 +319,36 @@ class Mem0Handler(BaseHTTPRequestHandler):
 
                 search_results = []
                 for r in results:
-                    search_results.append({
-                        "memory": {
+                    # Handle both dict and string result formats
+                    if isinstance(r, dict):
+                        # Get content - handle None case
+                        content = r.get("memory")
+                        if content is None:
+                            content = ""
+                        
+                        search_results.append({
                             "id": r.get("id", str(uuid.uuid4())),
-                            "content": r.get("memory", ""),
+                            "memory": content,
                             "user_id": user_id,
                             "metadata": r.get("metadata", {}),
-                            "created_at": r.get("created_at", datetime.now().isoformat())
-                        },
-                        "score": r.get("score", 0.0),
-                        "distance": r.get("distance", 0.0)
-                    })
+                            "created_at": r.get("created_at", datetime.now().isoformat()),
+                            "score": r.get("score", 0.0),
+                            "distance": r.get("distance", 0.0)
+                        })
+                    elif isinstance(r, str):
+                        # Handle string results (just the memory content)
+                        search_results.append({
+                            "id": str(uuid.uuid4()),
+                            "memory": r,
+                            "user_id": user_id,
+                            "metadata": {},
+                            "created_at": datetime.now().isoformat(),
+                            "score": 1.0,
+                            "distance": 0.0
+                        })
 
-                self.send_json_response(search_results)
+                # Wrap in results field for Go compatibility
+                self.send_json_response({"results": search_results})
             except Exception as e:
                 print(f"Error searching memories: {e}")
                 self.send_json_response({"error": str(e)}, 500)
