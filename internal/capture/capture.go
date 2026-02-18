@@ -49,18 +49,15 @@ func (c *Capturer) CaptureScreen() ([]*Capture, error) {
 			return nil, fmt.Errorf("capturing display %d: %w", i, err)
 		}
 
-		// Resize if needed
-		resizedImg := c.resize(img)
-
-		// Compress
-		compressed, err := c.compress(resizedImg)
+		// Compress full image
+		compressed, err := c.compress(img)
 		if err != nil {
 			return nil, fmt.Errorf("compressing display %d: %w", i, err)
 		}
 
 		captures = append(captures, &Capture{
 			Timestamp:  now,
-			Image:      resizedImg,
+			Image:      img,
 			Compressed: compressed,
 			DisplayNum: i,
 		})
@@ -82,40 +79,18 @@ func (c *Capturer) CapturePrimary() (*Capture, error) {
 		return nil, fmt.Errorf("capturing primary display: %w", err)
 	}
 
-	// Resize if needed
-	resizedImg := c.resize(img)
-
-	// Compress
-	compressed, err := c.compress(resizedImg)
+	// Compress full image
+	compressed, err := c.compress(img)
 	if err != nil {
 		return nil, fmt.Errorf("compressing: %w", err)
 	}
 
 	return &Capture{
 		Timestamp:  time.Now(),
-		Image:      resizedImg,
+		Image:      img,
 		Compressed: compressed,
 		DisplayNum: 0,
 	}, nil
-}
-
-// resize scales down the image if it exceeds max width
-func (c *Capturer) resize(img image.Image) image.Image {
-	if c.config.MaxWidth <= 0 {
-		return img
-	}
-
-	bounds := img.Bounds()
-	width := bounds.Dx()
-
-	if width <= c.config.MaxWidth {
-		return img
-	}
-
-	ratio := float64(c.config.MaxWidth) / float64(width)
-	height := int(float64(bounds.Dy()) * ratio)
-
-	return resizeImage(img, c.config.MaxWidth, height)
 }
 
 // compress converts image to JPEG
@@ -138,26 +113,4 @@ func (c *Capturer) compress(img image.Image) ([]byte, error) {
 // GetPlatform returns the current platform name
 func GetPlatform() string {
 	return runtime.GOOS
-}
-
-// resizeImage uses simple nearest neighbor for performance
-func resizeImage(src image.Image, newWidth, newHeight int) image.Image {
-	bounds := src.Bounds()
-	oldWidth := bounds.Dx()
-	oldHeight := bounds.Dy()
-
-	dst := image.NewRGBA(image.Rect(0, 0, newWidth, newHeight))
-
-	xRatio := float64(oldWidth) / float64(newWidth)
-	yRatio := float64(oldHeight) / float64(newHeight)
-
-	for y := 0; y < newHeight; y++ {
-		for x := 0; x < newWidth; x++ {
-			srcX := int(float64(x) * xRatio)
-			srcY := int(float64(y) * yRatio)
-			dst.Set(x, y, src.At(bounds.Min.X+srcX, bounds.Min.Y+srcY))
-		}
-	}
-
-	return dst
 }

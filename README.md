@@ -8,14 +8,14 @@ An AI-powered screen capture and memory system that learns who you are and under
 - **Vision AI**: Analyzes screen content using local LLM
 - **Memory System**: Stores context and activities using Mem0 embeddings
 - **Cross-Platform**: Optimized for macOS, works on Windows
-- **Resource Efficient**: JPEG compression, image resizing, async processing
+- **Resource Efficient**: JPEG compression, async processing
 
 ## Architecture
 
 ```
 ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   Screen    │────▶│   Resized    │────▶│    LLM      │
-│   Capture   │     │   (1024px)   │     │   Vision    │
+│   Screen    │────▶│  Compressed  │────▶│    LLM      │
+│   Capture   │     │    (JPEG)    │     │   Vision    │
 └─────────────┘     └──────────────┘     └──────┬──────┘
                                                 │
                                                 ▼
@@ -79,7 +79,6 @@ Edit `config.yaml` or set environment variables:
 capture:
   interval_seconds: 30    # How often to capture
   quality: 85             # JPEG quality (1-100)
-  max_width: 1024         # Resize to max width
   enabled: true
 
 # LM Studio
@@ -119,11 +118,10 @@ make dev
 ### How It Works
 
 1. **Captures screen** every N seconds (configurable)
-2. **Resizes** image to max 1024px width (preserves aspect ratio)
-3. **Compresses** to JPEG (85% quality by default)
-4. **Sends to LLM** for vision analysis
-5. **Stores in Mem0** with metadata (context, activities, intent)
-6. **Builds context** over time to understand you better
+2. **Compresses** to JPEG (85% quality by default)
+3. **Sends to LLM** for vision analysis
+4. **Stores in Mem0** with metadata (context, activities, intent)
+5. **Builds context** over time to understand you better
 
 ### Chat with Context
 
@@ -145,7 +143,6 @@ make test-coverage
 
 ## Resource Optimization
 
-- **Image resizing**: Downsamples to 1024px max before sending
 - **JPEG compression**: Reduces payload size significantly
 - **Async processing**: Non-blocking capture and analysis
 - **Configurable intervals**: Balance between insight and resource usage

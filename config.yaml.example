@@ -2,7 +2,6 @@
 capture:
   interval_seconds: 30          # How often to capture screen
   quality: 85                   # JPEG quality (1-100)
-  max_width: 1024               # Resize to max width (preserves aspect ratio)
   enabled: true                 # Start capturing immediately
 
 # LM Studio configuration

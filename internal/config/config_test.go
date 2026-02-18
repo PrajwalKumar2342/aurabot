@@ -23,9 +23,6 @@ func TestLoad_DefaultValues(t *testing.T) {
 	if cfg.Capture.Quality != 85 {
 		t.Errorf("Expected quality 85, got %d", cfg.Capture.Quality)
 	}
-	if cfg.Capture.MaxWidth != 1024 {
-		t.Errorf("Expected max_width 1024, got %d", cfg.Capture.MaxWidth)
-	}
 	if !cfg.Capture.Enabled {
 		t.Error("Expected capture enabled")
 	}
@@ -64,7 +61,6 @@ func TestLoad_ConfigFile(t *testing.T) {
 capture:
   interval_seconds: 60
   quality: 90
-  max_width: 512
   enabled: false
 `
 	if err := os.WriteFile("config_test.yaml", []byte(content), 0644); err != nil {

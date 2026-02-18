@@ -11,7 +11,6 @@ func TestNew(t *testing.T) {
 		Capture: config.CaptureConfig{
 			IntervalSeconds: 30,
 			Quality:         85,
-			MaxWidth:        1024,
 		},
 		LLM: config.LLMConfig{
 			BaseURL:     "http://localhost:1234/v1",

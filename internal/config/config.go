@@ -19,7 +19,6 @@ type Config struct {
 type CaptureConfig struct {
 	IntervalSeconds int  `yaml:"interval_seconds"`
 	Quality         int  `yaml:"quality"`
-	MaxWidth        int  `yaml:"max_width"`
 	Enabled         bool `yaml:"enabled"`
 }
 
@@ -53,7 +52,6 @@ func Load() (*Config, error) {
 		Capture: CaptureConfig{
 			IntervalSeconds: 30,
 			Quality:         85,
-			MaxWidth:        1024,
 			Enabled:         true,
 		},
 		LLM: LLMConfig{
