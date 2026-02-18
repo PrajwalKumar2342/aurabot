@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
 )
 
@@ -53,6 +54,9 @@ type AppConfig struct {
 
 // Load reads config from file or creates default
 func Load() (*Config, error) {
+	// Load .env file if it exists
+	_ = godotenv.Load()
+
 	cfg := &Config{
 		Capture: CaptureConfig{
 			IntervalSeconds: 30,
@@ -74,7 +78,7 @@ func Load() (*Config, error) {
 			APIKey:         "",
 			BaseURL:        "http://localhost:8000",
 			UserID:         "default_user",
-			CollectionName: "screen_memories",
+			CollectionName: "screen_memories_v3",
 		},
 		App: AppConfig{
 			Verbose:          false,

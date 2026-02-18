@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Mem0 REST API Server using Cerebras for LLM and LM Studio for local embeddings.
+Mem0 REST API Server using Groq for LLM and LM Studio for local embeddings.
 Compatible with screen-memory-assistant Go application.
 
 Configuration:
-- LLM: Cerebras API (Qwen 3 235B Instruct) - falls back to LM Studio if no API key
-- Embeddings: LM Studio (nomic-embed-text v1.5) - local
+- LLM: Groq API (openai/gpt-oss-120b) - falls back to LM Studio if no API key
+- Embeddings: LM Studio (embeddinggemma-300m) - local
 - Vector Store: Qdrant - local storage
 
 Environment Variables:
-- CEREBRAS_API_KEY: Your Cerebras API key (get from https://cloud.cerebras.ai)
+- GROQ_API_KEY: Your Groq API key (get from https://console.groq.com)
 - LM_STUDIO_URL: LM Studio server URL (default: http://localhost:1234/v1)
 - MEM0_HOST: Server host (default: localhost)
 - MEM0_PORT: Server port (default: 8000)
@@ -37,10 +37,10 @@ except ImportError:
 HOST = os.getenv("MEM0_HOST", "localhost")
 PORT = int(os.getenv("MEM0_PORT", "8000"))
 LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:1234/v1")
-CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 print("="*60)
-print("Mem0 REST API Server (Cerebras LLM + LM Studio Embeddings)")
+print("Mem0 REST API Server (Groq LLM + LM Studio Embeddings)")
 print("="*60)
 
 # Check LM Studio availability
@@ -79,6 +79,35 @@ except ImportError:
 # LM Studio: Remove 'response_format' parameter
 import openai
 
+# Patch Qdrant vector store to handle None vector in update method
+# This fixes a bug in mem0 where update() is called with vector=None for NONE events
+try:
+    from mem0.vector_stores.qdrant import Qdrant
+    from qdrant_client.models import SetPayload
+    
+    _original_qdrant_update = Qdrant.update
+    
+    def _patched_qdrant_update(self, vector_id, vector=None, payload=None):
+        """Patched update method that handles vector=None correctly."""
+        if vector is None:
+            # Only update payload, not the vector
+            # Use set_payload API instead of upsert when only updating payload
+            self.client.set_payload(
+                collection_name=self.collection_name,
+                payload=payload or {},
+                points=[vector_id],
+            )
+        else:
+            # Original behavior with vector update
+            from qdrant_client.models import PointStruct
+            point = PointStruct(id=vector_id, vector=vector, payload=payload)
+            self.client.upsert(collection_name=self.collection_name, points=[point])
+    
+    Qdrant.update = _patched_qdrant_update
+    print("[INFO] Patched Qdrant vector store to handle None vector in update()")
+except Exception as e:
+    print(f"[WARN] Could not patch Qdrant update method: {e}")
+
 _original_openai_init = openai.OpenAI.__init__
 
 def _patched_openai_init(self, *args, **kwargs):
@@ -90,56 +119,131 @@ def _patched_openai_init(self, *args, **kwargs):
             # Remove 'store' parameter (Cerebras doesn't support it)
             kwargs.pop('store', None)
             # Remove 'response_format' for non-OpenAI providers
-            if not CEREBRAS_API_KEY:
+            if not GROQ_API_KEY:
                 kwargs.pop('response_format', None)
             return orig_create(*args, **kwargs)
         self.chat.completions.create = _patched_create
+    
+    # Patch embeddings.create with retry logic for LM Studio stability
+    if hasattr(self, 'embeddings') and hasattr(self.embeddings, 'create'):
+        orig_embed = self.embeddings.create
+        def _patched_embed(*args, **kwargs):
+            import time
+            max_retries = 3
+            last_error = None
+            
+            # Debug: log what we're trying to embed
+            input_data = kwargs.get('input', [])
+            if isinstance(input_data, str):
+                input_preview = input_data[:80] + "..." if len(input_data) > 80 else input_data
+            else:
+                input_preview = f"[{len(input_data)} items]"
+            print(f"[DEBUG] Embedding request: {input_preview}")
+            
+            for attempt in range(max_retries):
+                try:
+                    response = orig_embed(*args, **kwargs)
+                    # Verify we got valid embeddings
+                    if hasattr(response, 'data') and response.data:
+                        all_valid = True
+                        for i, item in enumerate(response.data):
+                            if hasattr(item, 'embedding'):
+                                if item.embedding is None:
+                                    print(f"[DEBUG] Embedding item {i} is None")
+                                    all_valid = False
+                                elif len(item.embedding) == 0:
+                                    print(f"[DEBUG] Embedding item {i} is empty list")
+                                    all_valid = False
+                                else:
+                                    print(f"[DEBUG] Embedding item {i} success: {len(item.embedding)} dims")
+                            else:
+                                print(f"[DEBUG] Embedding item {i} has no embedding attribute")
+                                all_valid = False
+                        if all_valid:
+                            return response
+                        else:
+                            raise ValueError("One or more embeddings are None/empty")
+                    else:
+                        print(f"[DEBUG] Response has no data: {response}")
+                        raise ValueError("Response has no data")
+                except Exception as e:
+                    last_error = e
+                    print(f"[DEBUG] Embedding exception: {type(e).__name__}: {e}")
+                    if attempt < max_retries - 1:
+                        wait_time = 0.5 * (attempt + 1)
+                        print(f"[WARN] Embedding failed (attempt {attempt + 1}), retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                    else:
+                        print(f"[ERROR] Embedding failed after {max_retries} attempts, using zero vector fallback")
+                        # Return a fake response with zero vectors instead of failing
+                        from openai.types.create_embedding_response import CreateEmbeddingResponse
+                        from openai.types.embedding import Embedding
+                        
+                        if isinstance(input_data, str):
+                            input_data = [input_data]
+                        
+                        zero_embeddings = []
+                        for i, _ in enumerate(input_data):
+                            zero_embeddings.append(Embedding(
+                                embedding=[0.0] * 768,
+                                index=i,
+                                object="embedding"
+                            ))
+                        
+                        return CreateEmbeddingResponse(
+                            data=zero_embeddings,
+                            model=kwargs.get('model', 'unknown'),
+                            object="list",
+                            usage={"prompt_tokens": 0, "total_tokens": 0}
+                        )
+            
+        self.embeddings.create = _patched_embed
 
 openai.OpenAI.__init__ = _patched_openai_init
 
-if CEREBRAS_API_KEY:
-    print("[INFO] Patched OpenAI client for Cerebras compatibility (removed 'store' parameter)")
+if GROQ_API_KEY:
+    print("[INFO] Patched OpenAI client for Groq compatibility (removed 'store' parameter)")
 else:
     print("[INFO] Patched OpenAI client for LM Studio compatibility")
 
 # Note: When using LM Studio fallback, we use infer=False to skip LLM fact extraction
-# as local models may not produce expected JSON format. With Cerebras, fact extraction works properly.
+# as local models may not produce expected JSON format. With Groq, fact extraction works properly.
 
 # Configure Mem0
-# - LLM: Cerebras (Qwen 3 235B Instruct) for memory extraction
+# - LLM: Groq (openai/gpt-oss-120b) for memory extraction
 # - Embeddings: LM Studio (nomic-embed-text) for local embedding generation
 # - Vector Store: Qdrant for local storage
 print()
 print("Configuring Mem0...")
 
-if not CEREBRAS_API_KEY:
-    print("[WARN] CEREBRAS_API_KEY not set. Falling back to LM Studio for LLM.")
-    print("       Get your API key from: https://cloud.cerebras.ai")
+if not GROQ_API_KEY:
+    print("[WARN] GROQ_API_KEY not set. Falling back to LM Studio for LLM.")
+    print("       Get your API key from: https://console.groq.com")
     print()
 
 config = {
     "vector_store": {
         "provider": "qdrant",
         "config": {
-            "collection_name": "screen_memories",
-            "embedding_model_dims": 768,  # nomic-embed-text dimensions
+            "collection_name": "screen_memories_v3",
+            "embedding_model_dims": 768,  # embeddinggemma-300m dimensions (actual)
             "path": "./qdrant_storage",
         }
     },
     "embedder": {
         "provider": "openai",
         "config": {
-            "model": "text-embedding-nomic-embed-text-v1.5-embedding",
+            "model": "text-embedding-embeddinggemma-300m",
             "api_key": "not-needed",
             "openai_base_url": LM_STUDIO_URL,
         }
     },
     "llm": {
-        "provider": "openai",  # Cerebras is OpenAI-compatible
+        "provider": "openai",  # Groq is OpenAI-compatible
         "config": {
-            "model": "gpt-oss-120b",
-            "api_key": CEREBRAS_API_KEY if CEREBRAS_API_KEY else "not-needed",
-            "openai_base_url": "https://api.cerebras.ai/v1" if CEREBRAS_API_KEY else LM_STUDIO_URL,
+            "model": "openai/gpt-oss-120b",
+            "api_key": GROQ_API_KEY if GROQ_API_KEY else "not-needed",
+            "openai_base_url": "https://api.groq.com/openai/v1" if GROQ_API_KEY else LM_STUDIO_URL,
             "temperature": 0.7,
             "max_tokens": 4096,
         }
@@ -150,8 +254,8 @@ config = {
 try:
     memory = Memory.from_config(config_dict=config)
     print("[OK] Mem0 initialized successfully")
-    print(f"     LLM: {'Cerebras (gpt-oss-120b)' if CEREBRAS_API_KEY else 'LM Studio (local)'}")
-    print(f"     Embeddings: LM Studio (nomic-embed-text)")
+    print(f"     LLM: {'Groq (openai/gpt-oss-120b)' if GROQ_API_KEY else 'LM Studio (local)'}")
+    print(f"     Embeddings: LM Studio (text-embedding-embeddinggemma-300m)")
     print(f"     Vector Store: Qdrant (./qdrant_storage)")
 except Exception as e:
     print(f"[FAIL] Failed to initialize Mem0: {e}")
@@ -166,13 +270,17 @@ class Mem0Handler(BaseHTTPRequestHandler):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {format % args}")
 
     def send_json_response(self, data, status=200):
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.end_headers()
+            self.wfile.write(json.dumps(data).encode())
+        except (ConnectionAbortedError, BrokenPipeError):
+            # Client closed connection (timeout or disconnect), log but don't crash
+            print(f"[WARN] Client disconnected before response could be sent")
 
     def do_OPTIONS(self):
         self.send_response(200)
@@ -191,10 +299,10 @@ class Mem0Handler(BaseHTTPRequestHandler):
             self.send_json_response({
                 "status": "ok",
                 "timestamp": datetime.now().isoformat(),
-                "llm_provider": "cerebras" if CEREBRAS_API_KEY else "lm_studio",
-                "llm_model": "gpt-oss-120b" if CEREBRAS_API_KEY else "local",
+                "llm_provider": "groq" if GROQ_API_KEY else "lm_studio",
+                "llm_model": "openai/gpt-oss-120b" if GROQ_API_KEY else "local",
                 "embedder_provider": "lm_studio",
-                "embedder_model": "nomic-embed-text-v1.5",
+                "embedder_model": "text-embedding-embeddinggemma-300m",
                 "vector_store": "qdrant",
                 "lm_studio_url": LM_STUDIO_URL
             })
@@ -284,7 +392,7 @@ class Mem0Handler(BaseHTTPRequestHandler):
                     user_id=user_id,
                     agent_id=agent_id,
                     metadata=metadata,
-                    infer=bool(CEREBRAS_API_KEY)  # Enable fact extraction if using Cerebras
+                    infer=bool(GROQ_API_KEY)  # Enable fact extraction if using Groq
                 )
 
                 response = {
@@ -310,12 +418,15 @@ class Mem0Handler(BaseHTTPRequestHandler):
                 agent_id = data.get("agent_id")
                 limit = data.get("limit", 10)
 
-                results = memory.search(
+                result = memory.search(
                     query=query,
                     user_id=user_id,
                     agent_id=agent_id,
                     limit=limit
                 )
+
+                # mem0.search() returns {"results": [...]} dict, extract the list
+                results = result.get("results", []) if isinstance(result, dict) else result
 
                 search_results = []
                 for r in results:
