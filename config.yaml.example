@@ -8,7 +8,7 @@ capture:
 # LM Studio configuration
 llm:
   base_url: "http://localhost:1234/v1"  # LM Studio default
-  model: "lfm2-vl-450m"                  # Use the model loaded in LM Studio
+  model: "your-model-name"               # Use the model loaded in LM Studio
   max_tokens: 512
   temperature: 0.7
   timeout_seconds: 30

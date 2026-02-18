@@ -20,9 +20,17 @@ coverage.txt
 .DS_Store
 Thumbs.db
 
-# Config (optional - if contains secrets)
-# config.local.yaml
+# Config (contains user-specific settings)
+config.yaml
+config.local.yaml
+
+# Local data storage
+qdrant_storage/
 
 # Temp files
 *.tmp
 *.log
+
+# Personal/Development files
+kimi-workflow.md
+MEM0_SERVER_README.md
