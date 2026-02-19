@@ -5,20 +5,23 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"screen-memory-assistant/internal/config"
 	"screen-memory-assistant/internal/enhancer"
 	"screen-memory-assistant/internal/memory"
+	"screen-memory-assistant/internal/quickenhance"
 	"screen-memory-assistant/internal/server"
 	"screen-memory-assistant/internal/service"
 )
 
 // App struct
 type App struct {
-	ctx       context.Context
-	service   *service.Service
-	config    *config.Config
-	enhancer  *enhancer.Enhancer
-	apiServer *server.Server
+	ctx           context.Context
+	service       *service.Service
+	config        *config.Config
+	enhancer      *enhancer.Enhancer
+	apiServer     *server.Server
+	quickEnhance  *quickenhance.QuickEnhance
 }
 
 // NewApp creates a new App application struct
@@ -60,6 +63,22 @@ func (a *App) Startup(ctx context.Context) {
 		}
 	}
 
+	// Initialize quick enhance (global hotkey)
+	a.quickEnhance = quickenhance.New(a.enhancer)
+	a.quickEnhance.SetCallback(func(text string) {
+		// When hotkey pressed, emit event to frontend
+		// Frontend will show the quick enhance dialog
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "quickenhance:triggered", map[string]string{
+				"text": text,
+			})
+		}
+	})
+	
+	if err := a.quickEnhance.Start(); err != nil {
+		fmt.Printf("Failed to start quick enhance: %v\n", err)
+	}
+
 	// Start service in background
 	go func() {
 		serviceCtx, cancel := context.WithCancel(context.Background())
@@ -72,6 +91,11 @@ func (a *App) Startup(ctx context.Context) {
 
 // Shutdown is called when the app shuts down
 func (a *App) Shutdown(ctx context.Context) {
+	// Shutdown quick enhance
+	if a.quickEnhance != nil {
+		a.quickEnhance.Stop()
+	}
+	
 	// Shutdown API server
 	if a.apiServer != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -88,11 +112,17 @@ func (a *App) GetStatus() map[string]interface{} {
 			"platform":   "unknown",
 			"lastState":  "Service not initialized",
 			"extension":  a.getExtensionStatus(),
+			"quickEnhance": map[string]bool{
+				"running": a.quickEnhance != nil,
+			},
 		}
 	}
 
 	status := a.service.GetStatus()
 	status["extension"] = a.getExtensionStatus()
+	status["quickEnhance"] = map[string]bool{
+		"running": a.quickEnhance != nil,
+	}
 	return status
 }
 
@@ -155,6 +185,9 @@ func (a *App) GetConfig() map[string]interface{} {
 			"enabled": a.config.Extension.Enabled,
 			"port":    a.config.Extension.Port,
 		},
+		"quickEnhance": map[string]interface{}{
+			"hotkey": "Ctrl+Alt+E",
+		},
 	}
 }
 
@@ -209,6 +242,20 @@ func (a *App) EnhancePrompt(prompt string, context string) (*enhancer.Enhancemen
 	return a.enhancer.Enhance(ctx, prompt, context, 5)
 }
 
+// QuickEnhanceText enhances text and returns result (called from frontend)
+func (a *App) QuickEnhanceText(text string) (*enhancer.EnhancementResult, error) {
+	return a.EnhancePrompt(text, "")
+}
+
+// PasteEnhanced pastes enhanced text to active window
+func (a *App) PasteEnhanced(text string) error {
+	if a.quickEnhance != nil {
+		a.quickEnhance.PasteEnhanced(text)
+		return nil
+	}
+	return fmt.Errorf("quick enhance not initialized")
+}
+
 // ToggleCapture enables/disables screen capture
 func (a *App) ToggleCapture(enabled bool) bool {
 	if a.config == nil {
@@ -216,4 +263,11 @@ func (a *App) ToggleCapture(enabled bool) bool {
 	}
 	a.config.Capture.Enabled = enabled
 	return a.config.Capture.Enabled
+}
+
+// TriggerQuickEnhance manually triggers quick enhance (for UI button)
+func (a *App) TriggerQuickEnhance() string {
+	// This will be called when user clicks the enhance button in UI
+	// The frontend handles getting text and showing dialog
+	return ""
 }

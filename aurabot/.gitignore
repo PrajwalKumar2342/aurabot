@@ -2,7 +2,9 @@
 screen-memory-assistant
 *.exe
 build/
-dist/
+
+# Frontend dist is NOT ignored - it contains the app UI
+# dist/
 
 # Test artifacts
 *.test
