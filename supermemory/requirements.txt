@@ -1,8 +1,0 @@
-# Supermemory SDK and dependencies
-supermemory
-python-dotenv
-requests
-Pillow
-torch
-transformers
-numpy

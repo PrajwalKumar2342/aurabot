@@ -38,32 +38,32 @@ Run models completely locally without LM Studio or external APIs.
 **Quick Setup:**
 ```bash
 # Windows
-setup_local_models.bat
+scripts/setup_local_models.bat
 
 # Linux/macOS
-chmod +x setup_local_models.sh
-./setup_local_models.sh
+chmod +x scripts/setup_local_models.sh
+./scripts/setup_local_models.sh
 ```
 
 Or manually:
 ```bash
 # Install dependencies
-pip install -r requirements.txt
+pip install -r python/requirements.txt
 
 # Download models (one-time)
-python download_models.py
+python scripts/download_models.py
 
 # Start the server
-python local_model_server.py   # API only
+cd python/src && python local_model_server.py   # API only
 # OR
-python mem0_local.py           # Full Mem0 integration
+cd python/src && python mem0_local.py           # Full Mem0 integration
 ```
 
 **Models included:**
 - `LFM-2-Vision-450M` - Vision-language model for chat and image understanding
 - `Nomic-Embed-Text-v1.5` - Text embeddings for memory/search
 
-See [LOCAL_MODELS.md](LOCAL_MODELS.md) for detailed documentation.
+See [docs/LOCAL_MODELS.md](docs/LOCAL_MODELS.md) for detailed documentation.
 
 #### Option B: LM Studio
 - Download: https://lmstudio.ai/
@@ -76,13 +76,13 @@ Mem0 requires a REST API server. Choose one:
 
 **With Local Models:**
 ```bash
-python mem0_local.py
+cd python/src && python mem0_local.py
 ```
 
 **With LM Studio (if using Option B above):**
 ```bash
 pip install mem0ai requests
-python mem0_server.py
+cd python/src && python mem0_server.py
 ```
 
 Mem0 server will start on http://localhost:8000
@@ -98,10 +98,10 @@ cd screen-memory-assistant
 pip install mem0ai
 
 # Download Go dependencies
-go mod download
+cd go && go mod download
 
 # Build
-make build
+make build-go
 
 # Or build for specific platform
 make build-macos
@@ -110,7 +110,7 @@ make build-windows
 
 ## Configuration
 
-Edit `config.yaml` or set environment variables:
+Copy `config/config.yaml.example` to `config/config.yaml` and edit, or set environment variables:
 
 ```yaml
 # Screen capture
@@ -143,14 +143,14 @@ memory:
 ### Start the Service
 
 ```bash
-# Run directly
-go run .
+# Run Go service directly
+cd go && go run .
 
 # Or use make
-make run
+make run-go
 
 # With verbose logging
-make dev
+make dev-go
 ```
 
 ### How It Works
@@ -188,24 +188,40 @@ make test-coverage
 ## Project Structure
 
 ```
-.
-├── main.go                    # Entry point
-├── config.yaml                # Configuration
-├── go.mod                     # Go dependencies
-├── Makefile                   # Build commands
-├── internal/
-│   ├── config/               # Configuration management
-│   ├── capture/              # Screen capture (cross-platform)
-│   ├── llm/                  # LM Studio client
-│   ├── memory/               # Mem0 integration
-│   └── service/              # Orchestrator
-├── download_models.py         # Download local models
-├── local_model_server.py      # Standalone local model server
-├── mem0_local.py              # Mem0 with local models
-├── setup_local_models.bat     # Windows setup script
-├── setup_local_models.sh      # Linux/macOS setup script
-├── LOCAL_MODELS.md            # Local models documentation
-└── README.md
+mem0/
+├── README.md                    # Project overview
+├── Makefile                     # Build automation
+├── .env.example                 # Environment template
+├── config/
+│   └── config.yaml.example      # Configuration template
+├── docs/
+│   └── LOCAL_MODELS.md          # Local models documentation
+├── scripts/                     # Setup & utility scripts
+│   ├── download_models.py
+│   ├── setup_local_models.sh
+│   └── setup_local_models.bat
+├── python/                      # Python source code
+│   ├── requirements.txt
+│   ├── src/                     # Python modules
+│   │   ├── __init__.py
+│   │   ├── mem0_local.py        # Mem0 with local models
+│   │   ├── mem0_server.py       # Mem0 server
+│   │   └── local_model_server.py # Local model server
+│   └── tests/                   # Python tests
+├── go/                          # Go source code
+│   ├── go.mod
+│   ├── go.sum
+│   ├── main.go                  # Entry point
+│   ├── cmd/
+│   │   └── chat/
+│   │       └── main.go          # Chat CLI
+│   └── internal/
+│       ├── config/              # Configuration management
+│       ├── capture/             # Screen capture
+│       ├── llm/                 # LLM client
+│       ├── memory/              # Mem0 integration
+│       └── service/             # Orchestrator
+└── prompts/                     # Prompt templates (if any)
 ```
 
 ## Platform Notes
