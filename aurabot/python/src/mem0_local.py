@@ -92,9 +92,25 @@ class LocalModelManager:
         
         if not model_path.exists():
             print(f"[ERROR] Embedding model not found at {model_path}")
-            print("[INFO] Please run: python scripts/download_models.py")
-            print("[INFO] Note: You must run `huggingface-cli login` first")
-            sys.exit(1)
+            print("[INFO] Running automatic setup...")
+            
+            # Try to auto-setup
+            setup_script = Path(__file__).parent.parent.parent.parent / "scripts" / "auto_setup.py"
+            if setup_script.exists():
+                import subprocess
+                result = subprocess.run([sys.executable, str(setup_script)])
+                if result.returncode != 0:
+                    print("[ERROR] Automatic setup failed. Please run manually:")
+                    print(f"       python {setup_script}")
+                    sys.exit(1)
+                # Re-check after setup
+                if not model_path.exists():
+                    print("[ERROR] Model still not found after setup.")
+                    sys.exit(1)
+            else:
+                print("[INFO] Please run: python scripts/download_models.py")
+                print("[INFO] Note: You must run `huggingface-cli login` first")
+                sys.exit(1)
         
         # GPU check for embedding model
         if self.device != "cuda":
@@ -125,8 +141,24 @@ class LocalModelManager:
         
         if not model_path.exists():
             print(f"[ERROR] LLM model not found at {model_path}")
-            print("[INFO] Please run: python download_models.py")
-            sys.exit(1)
+            print("[INFO] Running automatic setup...")
+            
+            # Try to auto-setup
+            setup_script = Path(__file__).parent.parent.parent.parent / "scripts" / "auto_setup.py"
+            if setup_script.exists():
+                import subprocess
+                result = subprocess.run([sys.executable, str(setup_script)])
+                if result.returncode != 0:
+                    print("[ERROR] Automatic setup failed. Please run manually:")
+                    print(f"       python {setup_script}")
+                    sys.exit(1)
+                # Re-check after setup
+                if not model_path.exists():
+                    print("[ERROR] Model still not found after setup.")
+                    sys.exit(1)
+            else:
+                print("[INFO] Please run: python scripts/download_models.py")
+                sys.exit(1)
         
         print(f"[INFO] Loading LLM model...")
         
