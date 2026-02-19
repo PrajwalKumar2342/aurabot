@@ -8,11 +8,12 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+	"screen-memory-assistant/internal/enhancer"
 )
 
 // QuickEnhance provides global hotkey functionality for text enhancement
 type QuickEnhance struct {
-	enhancer    Enhancer
+	enhancer    *enhancer.Enhancer
 	ctx         context.Context
 	cancel      context.CancelFunc
 	running     bool
@@ -21,27 +22,11 @@ type QuickEnhance struct {
 	hotkeyID    int
 }
 
-// Enhancer interface
-type Enhancer interface {
-	Enhance(ctx context.Context, prompt, pageContext string, maxMemories int) (*EnhancementResult, error)
-}
+// EnhancementResult is an alias to the enhancer package type
+type EnhancementResult = enhancer.EnhancementResult
 
-// EnhancementResult represents the enhanced prompt
-type EnhancementResult struct {
-	OriginalPrompt  string
-	EnhancedPrompt  string
-	MemoriesUsed    []string
-	MemoryCount     int
-	EnhancementType string
-}
-
-// MemoryInfo represents memory information
-type MemoryInfo struct {
-	ID      string    `json:"id"`
-	Content string    `json:"content"`
-	Context string    `json:"context"`
-	Score   float64   `json:"score"`
-}
+// MemoryInfo is an alias to the enhancer package type
+type MemoryInfo = enhancer.MemoryInfo
 
 // Windows API constants
 const (
@@ -59,7 +44,6 @@ var (
 	kernel32DLL          = windows.NewLazySystemDLL("kernel32.dll")
 	procRegisterHotKey   = user32DLL.NewProc("RegisterHotKey")
 	procUnregisterHotKey = user32DLL.NewProc("UnregisterHotKey")
-	procGetMessage       = user32DLL.NewProc("GetMessageW")
 	procPeekMessage      = user32DLL.NewProc("PeekMessageW")
 	procTranslateMessage = user32DLL.NewProc("TranslateMessage")
 	procDispatchMessage  = user32DLL.NewProc("DispatchMessageW")
@@ -76,7 +60,7 @@ var (
 )
 
 // New creates a new QuickEnhance instance
-func New(enhancer Enhancer) *QuickEnhance {
+func New(enhancer *enhancer.Enhancer) *QuickEnhance {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &QuickEnhance{
 		enhancer: enhancer,
@@ -129,7 +113,7 @@ func (q *QuickEnhance) hotkeyListener() {
 	}
 	defer q.unregisterHotkey()
 
-	// Message loop - MSG structure
+	// Message loop
 	var msg struct {
 		Hwnd    windows.HWND
 		Message uint32
@@ -139,6 +123,7 @@ func (q *QuickEnhance) hotkeyListener() {
 		PtX     int32
 		PtY     int32
 	}
+	
 	for {
 		select {
 		case <-q.ctx.Done():

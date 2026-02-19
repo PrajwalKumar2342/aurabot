@@ -233,13 +233,13 @@ func (a *App) SearchMemories(query string, limit int) ([]enhancer.MemoryInfo, er
 }
 
 // EnhancePrompt enhances a prompt with memories
-func (a *App) EnhancePrompt(prompt string, context string) (*enhancer.EnhancementResult, error) {
+func (a *App) EnhancePrompt(prompt string, pageContext string) (*enhancer.EnhancementResult, error) {
 	if a.enhancer == nil {
 		return nil, fmt.Errorf("enhancer not initialized")
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
 	defer cancel()
-	return a.enhancer.Enhance(ctx, prompt, context, 5)
+	return a.enhancer.Enhance(ctx, prompt, pageContext, 5)
 }
 
 // QuickEnhanceText enhances text and returns result (called from frontend)
