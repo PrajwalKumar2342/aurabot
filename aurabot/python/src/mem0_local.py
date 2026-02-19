@@ -353,20 +353,63 @@ class Mem0LocalHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {format % args}")
     
+    # Allowed origins for CORS - configure based on your deployment
+    ALLOWED_ORIGINS = [
+        "http://localhost:3000",    # React dev server
+        "http://localhost:8080",    # Swift app
+        "http://localhost:7345",    # Extension API
+        "chrome-extension://*",     # Chrome extension
+        "https://chat.openai.com",  # ChatGPT
+        "https://chatgpt.com",
+        "https://claude.ai",
+        "https://gemini.google.com",
+        "https://perplexity.ai",
+    ]
+    
+    def _get_origin(self):
+        """Get the Origin header from the request."""
+        return self.headers.get('Origin', '')
+    
+    def _is_allowed_origin(self, origin):
+        """Check if the origin is in the allowed list."""
+        if not origin:
+            return True  # Same-origin requests
+        for allowed in self.ALLOWED_ORIGINS:
+            if allowed.endswith('/*'):
+                # Wildcard match for extensions
+                prefix = allowed[:-1]
+                if origin.startswith(prefix):
+                    return True
+            elif origin == allowed:
+                return True
+        return False
+    
     def send_json_response(self, data: dict, status: int = 200):
+        origin = self._get_origin()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        
+        # Only set CORS headers for allowed origins
+        if self._is_allowed_origin(origin):
+            self.send_header("Access-Control-Allow-Origin", origin if origin else "http://localhost:3000")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Credentials", "true")
+        
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
     
     def do_OPTIONS(self):
+        origin = self._get_origin()
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        
+        # Only set CORS headers for allowed origins
+        if self._is_allowed_origin(origin):
+            self.send_header("Access-Control-Allow-Origin", origin if origin else "http://localhost:3000")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Credentials", "true")
+        
         self.end_headers()
     
     def do_GET(self):

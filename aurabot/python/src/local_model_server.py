@@ -377,23 +377,51 @@ class ModelServerHandler(BaseHTTPRequestHandler):
     
     model_manager: Optional[ModelManager] = None
     
+    # Allowed origins for CORS
+    ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "http://localhost:7345",
+        "chrome-extension://*",
+    ]
+    
     def log_message(self, format, *args):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {format % args}")
     
+    def _get_origin(self):
+        return self.headers.get('Origin', '')
+    
+    def _is_allowed_origin(self, origin):
+        if not origin:
+            return True
+        for allowed in self.ALLOWED_ORIGINS:
+            if allowed.endswith('/*'):
+                if origin.startswith(allowed[:-1]):
+                    return True
+            elif origin == allowed:
+                return True
+        return False
+    
     def send_json_response(self, data: dict, status: int = 200):
+        origin = self._get_origin()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        if self._is_allowed_origin(origin):
+            self.send_header("Access-Control-Allow-Origin", origin if origin else "http://localhost:3000")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Credentials", "true")
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
     
     def do_OPTIONS(self):
+        origin = self._get_origin()
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        if self._is_allowed_origin(origin):
+            self.send_header("Access-Control-Allow-Origin", origin if origin else "http://localhost:3000")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Credentials", "true")
         self.end_headers()
     
     def do_GET(self):

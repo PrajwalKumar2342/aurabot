@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
 """
-Mem0 REST API Server using Groq for LLM and LM Studio for local embeddings.
-Compatible with screen-memory-assistant Go application.
-
-Configuration:
-- LLM: Groq API (openai/gpt-oss-120b) - falls back to LM Studio if no API key
-- Embeddings: LM Studio (embeddinggemma-300m) - local
-- Vector Store: Qdrant - local storage
+Mem0 REST API Server with dual LLM setup:
+- Cerebras API: For chat/LLM responses (fast, high-quality)
+- LM Studio (LFM2): For memory classification (local, privacy)
+- LM Studio: For embeddings (local)
 
 Environment Variables:
-- GROQ_API_KEY: Your Groq API key (get from https://console.groq.com)
-- LM_STUDIO_URL: LM Studio server URL (default: http://localhost:1234/v1)
+- CEREBRAS_API_KEY: For chat responses (https://cloud.cerebras.ai)
+- LM_STUDIO_URL: LM Studio URL for classification + embeddings
 - MEM0_HOST: Server host (default: localhost)
 - MEM0_PORT: Server port (default: 8000)
 """
@@ -37,11 +34,11 @@ except ImportError:
 HOST = os.getenv("MEM0_HOST", "localhost")
 PORT = int(os.getenv("MEM0_PORT", "8000"))
 LM_STUDIO_URL = os.getenv("LM_STUDIO_URL", "http://localhost:1234/v1")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+CEREBRAS_API_KEY = os.getenv("CEREBRAS_API_KEY", "")
 
-print("="*60)
-print("Mem0 REST API Server (Groq LLM + LM Studio Embeddings)")
-print("="*60)
+print("="*70)
+print("Mem0 Server: Cerebras (Chat) + LM Studio (Classification + Embeddings)")
+print("="*70)
 
 # Check LM Studio availability
 try:
@@ -119,7 +116,7 @@ def _patched_openai_init(self, *args, **kwargs):
             # Remove 'store' parameter (Cerebras doesn't support it)
             kwargs.pop('store', None)
             # Remove 'response_format' for non-OpenAI providers
-            if not GROQ_API_KEY:
+            if not CEREBRAS_API_KEY:
                 kwargs.pop('response_format', None)
             return orig_create(*args, **kwargs)
         self.chat.completions.create = _patched_create
@@ -201,24 +198,24 @@ def _patched_openai_init(self, *args, **kwargs):
 
 openai.OpenAI.__init__ = _patched_openai_init
 
-if GROQ_API_KEY:
-    print("[INFO] Patched OpenAI client for Groq compatibility (removed 'store' parameter)")
+if CEREBRAS_API_KEY:
+    print("[INFO] Patched OpenAI client for Cerebras compatibility (removed 'store' parameter)")
 else:
     print("[INFO] Patched OpenAI client for LM Studio compatibility")
 
 # Note: When using LM Studio fallback, we use infer=False to skip LLM fact extraction
-# as local models may not produce expected JSON format. With Groq, fact extraction works properly.
+# as local models may not produce expected JSON format. With Cerebras, fact extraction works properly.
 
 # Configure Mem0
-# - LLM: Groq (openai/gpt-oss-120b) for memory extraction
+# - LLM: Cerebras (llama3.1-70b) for memory extraction
 # - Embeddings: LM Studio (nomic-embed-text) for local embedding generation
 # - Vector Store: Qdrant for local storage
 print()
 print("Configuring Mem0...")
 
-if not GROQ_API_KEY:
-    print("[WARN] GROQ_API_KEY not set. Falling back to LM Studio for LLM.")
-    print("       Get your API key from: https://console.groq.com")
+if not CEREBRAS_API_KEY:
+    print("[WARN] CEREBRAS_API_KEY not set. Falling back to LM Studio for LLM.")
+    print("       Get your API key from: https://cloud.cerebras.ai")
     print()
 
 config = {
@@ -239,11 +236,11 @@ config = {
         }
     },
     "llm": {
-        "provider": "openai",  # Groq is OpenAI-compatible
+        "provider": "openai",  # Cerebras is OpenAI-compatible
         "config": {
-            "model": "openai/gpt-oss-120b",
-            "api_key": GROQ_API_KEY if GROQ_API_KEY else "not-needed",
-            "openai_base_url": "https://api.groq.com/openai/v1" if GROQ_API_KEY else LM_STUDIO_URL,
+            "model": "llama3.1-70b",
+            "api_key": CEREBRAS_API_KEY if CEREBRAS_API_KEY else "not-needed",
+            "openai_base_url": "https://api.cerebras.ai/v1" if CEREBRAS_API_KEY else LM_STUDIO_URL,
             "temperature": 0.7,
             "max_tokens": 4096,
         }
@@ -254,7 +251,7 @@ config = {
 try:
     memory = Memory.from_config(config_dict=config)
     print("[OK] Mem0 initialized successfully")
-    print(f"     LLM: {'Groq (openai/gpt-oss-120b)' if GROQ_API_KEY else 'LM Studio (local)'}")
+    print(f"     LLM: {'Cerebras (llama3.1-70b)' if CEREBRAS_API_KEY else 'LM Studio (local)'}")
     print(f"     Embeddings: LM Studio (text-embedding-embeddinggemma-300m)")
     print(f"     Vector Store: Qdrant (./qdrant_storage)")
 except Exception as e:
@@ -269,13 +266,50 @@ class Mem0Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         print(f"[{datetime.now().strftime('%H:%M:%S')}] {format % args}")
 
+    # Allowed origins for CORS - configure based on your deployment
+    ALLOWED_ORIGINS = [
+        "http://localhost:3000",    # React dev server
+        "http://localhost:8080",    # Swift app
+        "http://localhost:7345",    # Extension API
+        "chrome-extension://*",     # Chrome extension
+        "https://chat.openai.com",  # ChatGPT
+        "https://chatgpt.com",
+        "https://claude.ai",
+        "https://gemini.google.com",
+        "https://perplexity.ai",
+    ]
+    
+    def _get_origin(self):
+        """Get the Origin header from the request."""
+        return self.headers.get('Origin', '')
+    
+    def _is_allowed_origin(self, origin):
+        """Check if the origin is in the allowed list."""
+        if not origin:
+            return True  # Same-origin requests
+        for allowed in self.ALLOWED_ORIGINS:
+            if allowed.endswith('/*'):
+                # Wildcard match for extensions
+                prefix = allowed[:-1]
+                if origin.startswith(prefix):
+                    return True
+            elif origin == allowed:
+                return True
+        return False
+    
     def send_json_response(self, data, status=200):
         try:
+            origin = self._get_origin()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            
+            # Only set CORS headers for allowed origins
+            if self._is_allowed_origin(origin):
+                self.send_header("Access-Control-Allow-Origin", origin if origin else "http://localhost:3000")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+                self.send_header("Access-Control-Allow-Credentials", "true")
+            
             self.end_headers()
             self.wfile.write(json.dumps(data).encode())
         except (ConnectionAbortedError, BrokenPipeError):
@@ -283,10 +317,16 @@ class Mem0Handler(BaseHTTPRequestHandler):
             print(f"[WARN] Client disconnected before response could be sent")
 
     def do_OPTIONS(self):
+        origin = self._get_origin()
         self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        
+        # Only set CORS headers for allowed origins
+        if self._is_allowed_origin(origin):
+            self.send_header("Access-Control-Allow-Origin", origin if origin else "http://localhost:3000")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+            self.send_header("Access-Control-Allow-Credentials", "true")
+        
         self.end_headers()
 
     def do_GET(self):
@@ -299,8 +339,8 @@ class Mem0Handler(BaseHTTPRequestHandler):
             self.send_json_response({
                 "status": "ok",
                 "timestamp": datetime.now().isoformat(),
-                "llm_provider": "groq" if GROQ_API_KEY else "lm_studio",
-                "llm_model": "openai/gpt-oss-120b" if GROQ_API_KEY else "local",
+                "llm_provider": "cerebras" if CEREBRAS_API_KEY else "lm_studio",
+                "llm_model": "llama3.1-70b" if CEREBRAS_API_KEY else "local",
                 "embedder_provider": "lm_studio",
                 "embedder_model": "text-embedding-embeddinggemma-300m",
                 "vector_store": "qdrant",
@@ -392,7 +432,7 @@ class Mem0Handler(BaseHTTPRequestHandler):
                     user_id=user_id,
                     agent_id=agent_id,
                     metadata=metadata,
-                    infer=bool(GROQ_API_KEY)  # Enable fact extraction if using Groq
+                    infer=bool(CEREBRAS_API_KEY)  # Enable fact extraction if using Cerebras
                 )
 
                 response = {

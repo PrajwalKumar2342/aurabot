@@ -42,6 +42,14 @@ final class HTTPHandler: ChannelInboundHandler {
     
     private let enhancerService: EnhancerService
     
+    // Allowed origins for CORS
+    private let allowedOrigins = [
+        "http://localhost:3000",
+        "http://localhost:8080",
+        "http://localhost:7345",
+        "chrome-extension://",
+    ]
+    
     init(enhancerService: EnhancerService) {
         self.enhancerService = enhancerService
     }
@@ -57,12 +65,36 @@ final class HTTPHandler: ChannelInboundHandler {
         }
     }
     
+    private func isAllowedOrigin(_ origin: String) -> Bool {
+        if origin.isEmpty {
+            return true // Same-origin request
+        }
+        for allowed in allowedOrigins {
+            if allowed.hasSuffix("://") && origin.hasPrefix(allowed) {
+                return true // Prefix match for chrome-extension://
+            }
+            if origin == allowed {
+                return true
+            }
+        }
+        return false
+    }
+    
     private func handleRequest(context: ChannelHandlerContext, request: HTTPRequestHead) {
+        // Get origin from request headers
+        let origin = request.headers["Origin"].first ?? ""
+        let corsOrigin = isAllowedOrigin(origin) ? (origin.isEmpty ? "http://localhost:3000" : origin) : nil
+        
         var response = HTTPResponseHead(version: request.version, status: .ok)
         response.headers.add(name: "Content-Type", value: "application/json")
-        response.headers.add(name: "Access-Control-Allow-Origin", value: "*")
-        response.headers.add(name: "Access-Control-Allow-Methods", value: "GET, POST, OPTIONS")
-        response.headers.add(name: "Access-Control-Allow-Headers", value: "Content-Type")
+        
+        // Only set CORS headers for allowed origins
+        if let allowedOrigin = corsOrigin {
+            response.headers.add(name: "Access-Control-Allow-Origin", value: allowedOrigin)
+            response.headers.add(name: "Access-Control-Allow-Methods", value: "GET, POST, OPTIONS")
+            response.headers.add(name: "Access-Control-Allow-Headers", value: "Content-Type, Authorization")
+            response.headers.add(name: "Access-Control-Allow-Credentials", value: "true")
+        }
         
         let body: String
         
