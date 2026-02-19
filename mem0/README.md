@@ -35,31 +35,28 @@ Install from https://go.dev/dl/
 #### Option A: Local Models (No External Dependencies) ⭐ Recommended
 Run models completely locally without LM Studio or external APIs.
 
-**Quick Setup:**
+**One-Command Setup (Recommended):**
 ```bash
-# Windows
-scripts/setup_local_models.bat
-
-# Linux/macOS
-chmod +x scripts/setup_local_models.sh
-./scripts/setup_local_models.sh
+# Just run this - it handles everything automatically
+python start.py
 ```
 
-Or manually:
+This will:
+1. Check Hugging Face authentication (prompts if needed)
+2. Download required models automatically
+3. Verify GPU requirements
+4. Start the server
+
+**Manual Setup (if you prefer):**
 ```bash
 # Install dependencies
 pip install -r python/requirements.txt
 
-# Login to Hugging Face (required for Gemma model)
-huggingface-cli login
-
-# Download models (one-time)
-python scripts/download_models.py
+# Run automatic setup (auth + download)
+python scripts/auto_setup.py
 
 # Start the server
-cd python/src && python local_model_server.py   # API only
-# OR
-cd python/src && python mem0_local.py           # Full Mem0 integration
+python start.py --skip-setup
 ```
 
 **Models included:**
@@ -79,7 +76,7 @@ Mem0 requires a REST API server. Choose one:
 
 **With Local Models:**
 ```bash
-cd python/src && python mem0_local.py
+python start.py
 ```
 
 **With LM Studio (if using Option B above):**
@@ -146,7 +143,10 @@ memory:
 ### Start the Service
 
 ```bash
-# Run Go service directly
+# Run Mem0 server with local models (auto-setup included)
+python start.py
+
+# Run Go service (requires mem0 server running)
 cd go && go run .
 
 # Or use make
