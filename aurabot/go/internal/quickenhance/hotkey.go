@@ -9,11 +9,13 @@ import (
 
 	"golang.org/x/sys/windows"
 	"screen-memory-assistant/internal/enhancer"
+	"screen-memory-assistant/internal/overlay"
 )
 
 // QuickEnhance provides global hotkey functionality for text enhancement
 type QuickEnhance struct {
 	enhancer    *enhancer.Enhancer
+	overlay     *overlay.Overlay
 	ctx         context.Context
 	cancel      context.CancelFunc
 	running     bool
@@ -57,6 +59,7 @@ var (
 	procGlobalAlloc      = kernel32DLL.NewProc("GlobalAlloc")
 	procGlobalFree       = kernel32DLL.NewProc("GlobalFree")
 	procRtlMoveMemory    = kernel32DLL.NewProc("RtlMoveMemory")
+	procGetCursorPos     = user32DLL.NewProc("GetCursorPos")
 )
 
 // New creates a new QuickEnhance instance
@@ -77,7 +80,7 @@ func (q *QuickEnhance) SetCallback(callback func(text string)) {
 	q.mu.Unlock()
 }
 
-// Start begins listening for the global hotkey
+// Start begins listening for the global hotkey and starts overlay
 func (q *QuickEnhance) Start() error {
 	q.mu.Lock()
 	if q.running {
@@ -87,19 +90,66 @@ func (q *QuickEnhance) Start() error {
 	q.running = true
 	q.mu.Unlock()
 
-	// Start hotkey listener in a separate goroutine
+	// Create and start overlay
+	ov, err := overlay.NewOverlay(q.handleOverlayClick)
+	if err != nil {
+		return err
+	}
+	q.overlay = ov
+	
+	if err := ov.Start(); err != nil {
+		return err
+	}
+
+	// Start hotkey listener
 	go q.hotkeyListener()
 
 	return nil
 }
 
-// Stop stops the hotkey listener
+// Stop stops the hotkey listener and overlay
 func (q *QuickEnhance) Stop() {
 	q.cancel()
 	q.unregisterHotkey()
+	if q.overlay != nil {
+		q.overlay.Stop()
+	}
 	q.mu.Lock()
 	q.running = false
 	q.mu.Unlock()
+}
+
+// handleOverlayClick is called when user clicks the floating button
+func (q *QuickEnhance) handleOverlayClick() {
+	// Trigger the callback
+	q.mu.RLock()
+	callback := q.callback
+	q.mu.RUnlock()
+	
+	if callback != nil {
+		callback("")
+	}
+}
+
+// ShowOverlay shows the floating button at cursor position
+func (q *QuickEnhance) ShowOverlay() {
+	if q.overlay == nil {
+		return
+	}
+	
+	var pt struct {
+		X int32
+		Y int32
+	}
+	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
+	q.overlay.Show(int(pt.X), int(pt.Y))
+}
+
+// HideOverlay hides the floating button
+func (q *QuickEnhance) HideOverlay() {
+	if q.overlay != nil {
+		q.overlay.Hide()
+	}
 }
 
 // hotkeyListener listens for the global hotkey
@@ -177,9 +227,13 @@ func (q *QuickEnhance) handleHotkey() {
 	// Get selected text by copying it
 	text := q.getSelectedText()
 	
-	if text == "" {
-		return
+	// Show overlay at cursor position
+	var pt struct {
+		X int32
+		Y int32
 	}
+	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
+	q.overlay.Show(int(pt.X), int(pt.Y))
 	
 	// Call the callback with the captured text
 	q.mu.RLock()
