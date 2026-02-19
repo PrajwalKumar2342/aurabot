@@ -3,7 +3,7 @@
 Download models script - Downloads models locally for offline use.
 
 Models:
-- nomic-ai/nomic-embed-text-v1.5: Text embedding model
+- google/embeddinggemma-300m-f8: Text embedding model (GPU required)
 - LiquidAI/LFM-2-Vision-450M: Vision-language model
 
 Usage:
@@ -11,6 +11,10 @@ Usage:
     
 Arguments:
     model_name    Optional. One of: embedding, vision, or all (default: all)
+
+Note: 
+    - Embedding model requires GPU and Hugging Face authentication
+    - Run `huggingface-cli login` before downloading embedding model
 """
 
 import os
@@ -24,9 +28,9 @@ MODELS_DIR = Path("./models")
 # Model configurations
 MODELS = {
     "embedding": {
-        "name": "nomic-ai/nomic-embed-text-v1.5",
-        "local_path": MODELS_DIR / "nomic-embed-text-v1.5",
-        "description": "Nomic Embed Text v1.5 - 768 dimensional embeddings",
+        "name": "google/embeddinggemma-300m-f8",
+        "local_path": MODELS_DIR / "embeddinggemma-300m-f8",
+        "description": "Google Embedding Gemma 300M FP8 - 768 dimensional embeddings (GPU required)",
     },
     "vision": {
         "name": "LiquidAI/LFM-2-Vision-450M",

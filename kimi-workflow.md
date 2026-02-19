@@ -48,7 +48,7 @@ After generating ANY code, I MUST pause and reflect:
 ## 3. Test Generation & Execution (Mandatory)
 
 For EVERY piece of code I generate, I MUST write comprehensive tests AND run them:
-
+Add every tests in the tests folder
 ### Coverage Requirements:
 - [ ] Happy path (normal expected usage)
 - [ ] Edge cases (empty inputs, boundary values, None/null)

@@ -50,6 +50,9 @@ Or manually:
 # Install dependencies
 pip install -r python/requirements.txt
 
+# Login to Hugging Face (required for Gemma model)
+huggingface-cli login
+
 # Download models (one-time)
 python scripts/download_models.py
 
@@ -61,7 +64,7 @@ cd python/src && python mem0_local.py           # Full Mem0 integration
 
 **Models included:**
 - `LFM-2-Vision-450M` - Vision-language model for chat and image understanding
-- `Nomic-Embed-Text-v1.5` - Text embeddings for memory/search
+- `google/embeddinggemma-300m-f8` - Text embeddings for memory/search (GPU required)
 
 See [docs/LOCAL_MODELS.md](docs/LOCAL_MODELS.md) for detailed documentation.
 

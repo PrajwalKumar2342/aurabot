@@ -7,7 +7,7 @@ instead of requiring LM Studio or external API services.
 
 Models:
 - LLM: LFM-2-Vision-450M (local)
-- Embeddings: Nomic Embed Text v1.5 (local)
+- Embeddings: Google Embedding Gemma 300M FP8 (local, GPU required)
 - Vector Store: Qdrant (local storage)
 
 Environment Variables:
@@ -15,12 +15,16 @@ Environment Variables:
 - MEM0_PORT: Server port (default: 8000)
 - MODELS_DIR: Directory to store downloaded models (default: ./models)
 
+Requirements:
+    - GPU is required for embedding model
+    - Run `huggingface-cli login` before first use
+
 Usage:
     # First, download the models (one-time)
-    python download_models.py
+    python scripts/download_models.py
     
     # Then, start the server
-    python mem0_local.py
+    cd python/src && python mem0_local.py
 """
 
 import os
@@ -80,24 +84,33 @@ class LocalModelManager:
             pass
     
     def load_embedding_model(self):
-        """Load Nomic embedding model."""
+        """Load Google Embedding Gemma model (GPU required)."""
         from transformers import AutoTokenizer, AutoModel
         import torch
         
-        model_path = MODELS_DIR / "nomic-embed-text-v1.5"
+        model_path = MODELS_DIR / "embeddinggemma-300m-f8"
         
         if not model_path.exists():
             print(f"[ERROR] Embedding model not found at {model_path}")
-            print("[INFO] Please run: python download_models.py")
+            print("[INFO] Please run: python scripts/download_models.py")
+            print("[INFO] Note: You must run `huggingface-cli login` first")
             sys.exit(1)
         
-        print(f"[INFO] Loading embedding model...")
+        # GPU check for embedding model
+        if self.device != "cuda":
+            print("[ERROR] GPU is required for embedding model (google/embeddinggemma-300m-f8)")
+            print("[INFO] Please ensure CUDA is available or use a different embedding model")
+            sys.exit(1)
+        
+        print(f"[INFO] Loading Google Embedding Gemma 300M FP8 model...")
         
         self.embedding_tokenizer = AutoTokenizer.from_pretrained(
             model_path, trust_remote_code=True, local_files_only=True
         )
         self.embedding_model = AutoModel.from_pretrained(
-            model_path, trust_remote_code=True, local_files_only=True
+            model_path, trust_remote_code=True, local_files_only=True,
+            torch_dtype=torch.float16,
+            device_map="auto"
         )
         self.embedding_model.to(self.device)
         self.embedding_model.eval()
@@ -129,14 +142,14 @@ class LocalModelManager:
         print(f"[OK] LLM model loaded")
     
     def embed(self, texts: List[str]) -> List[List[float]]:
-        """Generate embeddings for texts."""
+        """Generate embeddings for texts using Gemma model."""
         import torch
         
         if self.embedding_model is None:
             self.load_embedding_model()
         
-        # Add task prefix for Nomic
-        texts = [f"search_document: {t}" for t in texts]
+        # Gemma doesn't use task prefixes like Nomic
+        # Just use raw texts
         
         embeddings = []
         batch_size = 8
@@ -145,15 +158,16 @@ class LocalModelManager:
             for i in range(0, len(texts), batch_size):
                 batch = texts[i:i + batch_size]
                 
+                # Gemma supports up to 8192 tokens
                 encoded = self.embedding_tokenizer(
                     batch, padding=True, truncation=True,
-                    return_tensors="pt", max_length=2048
+                    return_tensors="pt", max_length=8192
                 )
                 encoded = {k: v.to(self.device) for k, v in encoded.items()}
                 
                 output = self.embedding_model(**encoded)
                 
-                # Mean pooling
+                # Mean pooling (Gemma uses similar pooling strategy)
                 mask = encoded["attention_mask"].unsqueeze(-1).float()
                 embeddings_batch = (output[0] * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1e-9)
                 embeddings_batch = torch.nn.functional.normalize(embeddings_batch, p=2, dim=1)

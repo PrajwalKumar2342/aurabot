@@ -1,56 +1,70 @@
 # Local Models Setup
 
-This guide explains how to run **LFM-2-Vision-450M** and **Nomic-Embed-Text-v1.5** locally without any external API dependencies.
+This guide explains how to run **LFM-2-Vision-450M** and **google/embeddinggemma-300m-f8** locally without any external API dependencies.
 
 ## Overview
 
-| Model | Type | Size | Purpose |
-|-------|------|------|---------|
-| `LiquidAI/LFM-2-Vision-450M` | Vision-Language | ~450M | Chat, vision understanding, Q&A |
-| `nomic-ai/nomic-embed-text-v1.5` | Embedding | ~550M | Text embeddings for search/memory |
+| Model | Type | Size | Purpose | GPU Required |
+|-------|------|------|---------|-------------|
+| `LiquidAI/LFM-2-Vision-450M` | Vision-Language | ~450M | Chat, vision understanding, Q&A | Optional |
+| `google/embeddinggemma-300m-f8` | Embedding | ~300M | Text embeddings for search/memory | **Yes** |
 
 ## Quick Start
 
 ### 1. Install Dependencies
 
 ```bash
-pip install -r requirements.txt
+pip install -r python/requirements.txt
 ```
 
 Or let the scripts auto-install on first run.
 
-### 2. Download Models (One-time)
+### 2. Authenticate with Hugging Face
+
+The Gemma embedding model requires Hugging Face authentication:
+
+```bash
+# Install huggingface-cli if not already installed
+pip install huggingface_hub
+
+# Login (requires Hugging Face account and accepting Gemma terms)
+huggingface-cli login
+```
+
+**Note:** You must accept the Gemma license terms on the Hugging Face model page before downloading.
+
+### 3. Download Models (One-time)
 
 Download both models:
 ```bash
-python download_models.py
+python scripts/download_models.py
 ```
 
 Or download individually:
 ```bash
-python download_models.py embedding   # Nomic embed model only
-python download_models.py vision      # LFM vision model only
+python scripts/download_models.py embedding   # Gemma embed model only
+python scripts/download_models.py vision      # LFM vision model only
 ```
 
 Check download status:
 ```bash
-python download_models.py --list
+python scripts/download_models.py --list
 ```
 
 Models are saved to `./models/` directory:
-- `./models/nomic-embed-text-v1.5/` - Embedding model
+- `./models/embeddinggemma-300m-f8/` - Embedding model
 - `./models/lfm-2-vision-450m/` - Vision-language model
 
-### 3. Run the Server
+### 4. Run the Server
 
 **Option A: Standalone Model Server** (Simple, API-only)
 ```bash
-python local_model_server.py
+cd python/src && python local_model_server.py
 ```
 
 **Option B: Mem0 + Local Models** (Full memory system)
 ```bash
-python mem0_local.py
+cd python/src && python mem0_local.py
 ```
 
 ## API Endpoints
@@ -73,7 +87,7 @@ curl -X POST http://localhost:8000/v1/embeddings \
   -H "Content-Type: application/json" \
   -d '{
     "input": "Hello, world!",
-    "model": "nomic-embed-text-v1.5"
+    "model": "embeddinggemma-300m-f8"
   }'
 ```
 
@@ -138,27 +152,28 @@ python mem0_local.py
 Downloads models from Hugging Face Hub.
 
 ```bash
-python download_models.py [model_name]
+python scripts/download_models.py [model_name]
 
 # Options:
-python download_models.py all        # Download all models (default)
-python download_models.py embedding  # Download Nomic embed model
-python download_models.py vision     # Download LFM vision model
-python download_models.py --list     # Show download status
-python download_models.py --help     # Show help
+python scripts/download_models.py all        # Download all models (default)
+python scripts/download_models.py embedding  # Download Gemma embed model
+python scripts/download_models.py vision     # Download LFM vision model
+python scripts/download_models.py --list     # Show download status
+python scripts/download_models.py --help     # Show help
 ```
 
 ### `local_model_server.py`
 Standalone server providing OpenAI-compatible API for local models.
 - Auto-downloads models on first run
 - Provides embeddings and chat endpoints
-- No external dependencies after download
+- **Note:** Embedding model requires GPU
 
 ### `mem0_local.py`
 Full Mem0 memory server with local models.
 - Requires `mem0ai` package
 - Provides memory storage, search, and retrieval
 - Uses Qdrant for vector storage
+- **Note:** Embedding model requires GPU
 
 ## Hardware Requirements
 
@@ -166,9 +181,13 @@ Full Mem0 memory server with local models.
 |-----------|---------|-------------|
 | RAM | 8 GB | 16 GB |
 | Disk | 3 GB free | 5 GB free |
-| GPU | Optional | CUDA-compatible GPU |
+| GPU | **Required** for embeddings | CUDA-compatible GPU (8GB+ VRAM) |
+| Hugging Face | Account + Auth | Account + Auth |
 
-**Note:** The models will use GPU acceleration automatically if CUDA is available.
+**Note:** 
+- Vision model can run on CPU or GPU
+- **Embedding model (Gemma) requires GPU** - will not start without CUDA
+- Gemma model requires Hugging Face authentication
 
 ## Troubleshooting
 
@@ -180,9 +199,11 @@ pip install transformers torch pillow numpy
 ### Model download fails
 1. Check internet connection
 2. Ensure you have enough disk space (~3GB)
-3. Try manual download:
+3. Verify Hugging Face authentication: `huggingface-cli whoami`
+4. Accept Gemma license at https://huggingface.co/google/embeddinggemma-300m-f8
+5. Try manual download:
    ```bash
-   python -c "from huggingface_hub import snapshot_download; snapshot_download('nomic-ai/nomic-embed-text-v1.5', local_dir='./models/nomic-embed-text-v1.5')"
+   python -c "from huggingface_hub import snapshot_download; snapshot_download('google/embeddinggemma-300m-f8', local_dir='./models/embeddinggemma-300m-f8')"
    ```
 
 ### Out of memory
@@ -204,12 +225,15 @@ pip install transformers torch pillow numpy
 - **Context**: 4096 tokens
 - **Use cases**: Image understanding, visual Q&A, chat with images
 
-### Nomic-Embed-Text-v1.5
-- **Provider**: Nomic AI
+### Google Embedding Gemma 300M FP8
+- **Provider**: Google
 - **Type**: Text Embedding Model
 - **Dimensions**: 768
-- **Max Length**: 2048 tokens
+- **Max Length**: 8192 tokens
+- **Quantization**: FP8 (8-bit floating point)
+- **GPU Required**: Yes
 - **Use cases**: Semantic search, text similarity, clustering
+- **License**: Gemma Terms of Use (requires HF authentication)
 
 ## Integration with Existing Code
 
@@ -225,7 +249,7 @@ client = OpenAI(
 
 # Embeddings
 response = client.embeddings.create(
-    model="nomic-embed-text-v1.5",
+    model="embeddinggemma-300m-f8",
     input="Hello, world!"
 )
 
@@ -240,4 +264,4 @@ response = client.chat.completions.create(
 
 These scripts are provided as-is. Please check the model licenses on Hugging Face:
 - [LFM-2-Vision-450M](https://huggingface.co/LiquidAI/LFM-2-Vision-450M)
-- [Nomic-Embed-Text-v1.5](https://huggingface.co/nomic-ai/nomic-embed-text-v1.5)
+- [google/embeddinggemma-300m-f8](https://huggingface.co/google/embeddinggemma-300m-f8) (requires authentication)
