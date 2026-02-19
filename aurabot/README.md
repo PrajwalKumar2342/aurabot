@@ -7,6 +7,7 @@ An AI-powered screen capture and memory system that learns who you are and under
 - **Periodic Screen Capture**: Configurable interval screenshots with compression
 - **Vision AI**: Analyzes screen content using local LLM
 - **Memory System**: Stores context and activities using Mem0 embeddings
+- **Browser Extension**: Enhance AI prompts on ChatGPT, Claude, Gemini with your memories
 - **Cross-Platform**: Optimized for macOS, works on Windows
 - **Resource Efficient**: JPEG compression, async processing
 
@@ -23,6 +24,15 @@ An AI-powered screen capture and memory system that learns who you are and under
 │   Search    │◀────│    Mem0      │◀────│   Context   │
 │   Memory    │     │   Vector DB  │     │   Store     │
 └─────────────┘     └──────────────┘     └─────────────┘
+      │
+      │ HTTP API
+      ▼
+┌──────────────────────────────────────────────────────┐
+│                 Browser Extension                     │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐ │
+│  │ ChatGPT │  │ Claude  │  │ Gemini  │  │Perplexity│ │
+│  └─────────┘  └─────────┘  └─────────┘  └─────────┘ │
+└──────────────────────────────────────────────────────┘
 ```
 
 ## Prerequisites
@@ -162,7 +172,36 @@ The desktop app provides:
 - 📊 **Dashboard** - Visual overview of your memories and system status
 - 💾 **Memories Browser** - Search and browse captured memories
 - 💬 **Chat Interface** - Talk to your memory assistant
+- 🔌 **Extension API** - HTTP server for browser extension (port 7345)
 - ⚙️ **Settings UI** - Configure without editing config files
+
+### Browser Extension
+
+Enhance your AI prompts on ChatGPT, Claude, Gemini, and Perplexity with your saved memories.
+
+**1. Install the Extension:**
+```bash
+# Chrome/Edge
+1. Open chrome://extensions/
+2. Enable "Developer mode"
+3. Click "Load unpacked"
+4. Select the `extension/chrome` folder
+```
+
+**2. How to Use:**
+1. Start the AuraBot desktop app (extension API runs automatically on port 7345)
+2. Visit ChatGPT, Claude, Gemini, or Perplexity
+3. Type your prompt
+4. Click the "Enhance" button next to the input field
+5. Your prompt will be enriched with relevant memories from your history
+
+**Supported Platforms:**
+- ✅ ChatGPT (chat.openai.com, chatgpt.com)
+- ✅ Claude (claude.ai)
+- ✅ Gemini (gemini.google.com)
+- ✅ Perplexity (perplexity.ai)
+
+See [extension/README.md](extension/README.md) for detailed setup and troubleshooting.
 
 ### Start the Service (CLI Mode)
 
@@ -215,7 +254,7 @@ make test-coverage
 ## Project Structure
 
 ```
-mem0/
+aurabot/
 ├── README.md                    # Project overview
 ├── Makefile                     # Build automation
 ├── .env.example                 # Environment template
@@ -223,6 +262,15 @@ mem0/
 │   └── config.yaml.example      # Configuration template
 ├── docs/
 │   └── LOCAL_MODELS.md          # Local models documentation
+├── extension/                   # Browser extension
+│   ├── README.md                # Extension documentation
+│   └── chrome/                  # Chrome/Edge extension
+│       ├── manifest.json
+│       ├── content.js           # Injects enhance button
+│       ├── styles.css
+│       ├── popup.html
+│       ├── popup.js
+│       └── icons/
 ├── scripts/                     # Setup & utility scripts
 │   ├── download_models.py
 │   ├── setup_local_models.sh
@@ -256,7 +304,9 @@ mem0/
         ├── capture/             # Screen capture
         ├── llm/                 # LLM client
         ├── memory/              # Mem0 integration
-        └── service/             # Orchestrator
+        ├── service/             # Orchestrator
+        ├── enhancer/            # Prompt enhancement
+        └── server/              # Extension HTTP API server
 ```
 
 ## Platform Notes

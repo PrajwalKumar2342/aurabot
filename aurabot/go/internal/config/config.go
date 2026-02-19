@@ -10,10 +10,11 @@ import (
 
 // Config holds all application configuration
 type Config struct {
-	Capture CaptureConfig `yaml:"capture"`
-	LLM     LLMConfig     `yaml:"llm"`
-	Memory  MemoryConfig  `yaml:"memory"`
-	App     AppConfig     `yaml:"app"`
+	Capture   CaptureConfig   `yaml:"capture"`
+	LLM       LLMConfig       `yaml:"llm"`
+	Memory    MemoryConfig    `yaml:"memory"`
+	App       AppConfig       `yaml:"app"`
+	Extension ExtensionConfig `yaml:"extension"`
 }
 
 // CaptureConfig holds screen capture settings
@@ -52,6 +53,12 @@ type AppConfig struct {
 	MemoryWindow     int  `yaml:"memory_window"`
 }
 
+// ExtensionConfig holds browser extension API settings
+type ExtensionConfig struct {
+	Enabled bool `yaml:"enabled"`
+	Port    int  `yaml:"port"`
+}
+
 // Load reads config from file or creates default
 func Load() (*Config, error) {
 	// Load .env file if it exists
@@ -84,6 +91,10 @@ func Load() (*Config, error) {
 			Verbose:          false,
 			ProcessOnCapture: true,
 			MemoryWindow:     10,
+		},
+		Extension: ExtensionConfig{
+			Enabled: true,
+			Port:    7345,
 		},
 	}
 

@@ -6,14 +6,19 @@ import (
 	"time"
 
 	"screen-memory-assistant/internal/config"
+	"screen-memory-assistant/internal/enhancer"
+	"screen-memory-assistant/internal/memory"
+	"screen-memory-assistant/internal/server"
 	"screen-memory-assistant/internal/service"
 )
 
 // App struct
 type App struct {
-	ctx     context.Context
-	service *service.Service
-	config  *config.Config
+	ctx       context.Context
+	service   *service.Service
+	config    *config.Config
+	enhancer  *enhancer.Enhancer
+	apiServer *server.Server
 }
 
 // NewApp creates a new App application struct
@@ -41,6 +46,20 @@ func (a *App) Startup(ctx context.Context) {
 	}
 	a.service = svc
 
+	// Create memory store for enhancer
+	memoryStore := memory.NewStore(&cfg.Memory)
+
+	// Create enhancer
+	a.enhancer = enhancer.New(memoryStore)
+
+	// Start API server for browser extension
+	if cfg.Extension.Enabled {
+		a.apiServer = server.New(a.enhancer, cfg.Extension.Port)
+		if err := a.apiServer.Start(); err != nil {
+			fmt.Printf("Failed to start extension API server: %v\n", err)
+		}
+	}
+
 	// Start service in background
 	go func() {
 		serviceCtx, cancel := context.WithCancel(context.Background())
@@ -53,19 +72,40 @@ func (a *App) Startup(ctx context.Context) {
 
 // Shutdown is called when the app shuts down
 func (a *App) Shutdown(ctx context.Context) {
-	// Cleanup if needed
+	// Shutdown API server
+	if a.apiServer != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		a.apiServer.Stop(shutdownCtx)
+	}
 }
 
 // GetStatus returns the current service status
 func (a *App) GetStatus() map[string]interface{} {
 	if a.service == nil {
 		return map[string]interface{}{
-			"running":   false,
-			"platform":  "unknown",
-			"lastState": "Service not initialized",
+			"running":    false,
+			"platform":   "unknown",
+			"lastState":  "Service not initialized",
+			"extension":  a.getExtensionStatus(),
 		}
 	}
-	return a.service.GetStatus()
+
+	status := a.service.GetStatus()
+	status["extension"] = a.getExtensionStatus()
+	return status
+}
+
+// getExtensionStatus returns extension server status
+func (a *App) getExtensionStatus() map[string]interface{} {
+	if a.config == nil {
+		return map[string]interface{}{"enabled": false}
+	}
+	return map[string]interface{}{
+		"enabled": a.config.Extension.Enabled,
+		"port":    a.config.Extension.Port,
+		"running": a.apiServer != nil,
+	}
 }
 
 // Chat sends a message and returns the response
@@ -111,6 +151,10 @@ func (a *App) GetConfig() map[string]interface{} {
 			"processOnCapture": a.config.App.ProcessOnCapture,
 			"memoryWindow":     a.config.App.MemoryWindow,
 		},
+		"extension": map[string]interface{}{
+			"enabled": a.config.Extension.Enabled,
+			"port":    a.config.Extension.Port,
+		},
 	}
 }
 
@@ -137,20 +181,32 @@ func (a *App) UpdateConfig(updates map[string]interface{}) error {
 	return a.config.Save("config.yaml")
 }
 
-// GetMemories returns recent memories (placeholder - would need mem0 client)
-func (a *App) GetMemories(limit int) []map[string]interface{} {
-	// This would require direct mem0 client access
-	// For now, return mock data
-	return []map[string]interface{}{
-		{
-			"id":        "1",
-			"content":   "User was working on code editor, typing Go code",
-			"timestamp": time.Now().Add(-5 * time.Minute).Format(time.RFC3339),
-			"metadata": map[string]string{
-				"context": "Coding session",
-			},
-		},
+// GetMemories returns recent memories
+func (a *App) GetMemories(limit int) ([]enhancer.MemoryInfo, error) {
+	if a.enhancer == nil {
+		return nil, fmt.Errorf("enhancer not initialized")
 	}
+	return a.enhancer.GetRecentMemories(limit)
+}
+
+// SearchMemories searches memories by query
+func (a *App) SearchMemories(query string, limit int) ([]enhancer.MemoryInfo, error) {
+	if a.enhancer == nil {
+		return nil, fmt.Errorf("enhancer not initialized")
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 10*time.Second)
+	defer cancel()
+	return a.enhancer.SearchMemories(ctx, query, limit)
+}
+
+// EnhancePrompt enhances a prompt with memories
+func (a *App) EnhancePrompt(prompt string, context string) (*enhancer.EnhancementResult, error) {
+	if a.enhancer == nil {
+		return nil, fmt.Errorf("enhancer not initialized")
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 15*time.Second)
+	defer cancel()
+	return a.enhancer.Enhance(ctx, prompt, context, 5)
 }
 
 // ToggleCapture enables/disables screen capture

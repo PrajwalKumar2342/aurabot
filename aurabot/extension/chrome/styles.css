@@ -1,0 +1,165 @@
+/* AuraBot Extension Styles */
+
+/* Main Enhance Button */
+.aurabot-enhance-btn {
+  position: absolute;
+  right: 80px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  z-index: 10000;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.aurabot-enhance-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+}
+
+.aurabot-enhance-btn:active {
+  transform: translateY(0);
+}
+
+.aurabot-enhance-btn svg {
+  flex-shrink: 0;
+}
+
+/* Loading state */
+.aurabot-enhance-btn.aurabot-loading {
+  opacity: 0.8;
+  cursor: not-allowed;
+}
+
+/* Offline state */
+.aurabot-enhance-btn.aurabot-offline {
+  background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
+  box-shadow: 0 2px 8px rgba(107, 114, 128, 0.3);
+}
+
+.aurabot-enhance-btn.aurabot-offline:hover {
+  background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+}
+
+/* Spinner */
+.aurabot-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: aurabot-spin 0.8s linear infinite;
+}
+
+@keyframes aurabot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Notifications */
+.aurabot-notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: white;
+  z-index: 10001;
+  transform: translateX(400px);
+  transition: transform 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.aurabot-notification.aurabot-show {
+  transform: translateX(0);
+}
+
+.aurabot-notification.aurabot-success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.aurabot-notification.aurabot-error {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+.aurabot-notification.aurabot-warning {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+
+.aurabot-notification.aurabot-info {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+/* Platform-specific adjustments */
+
+/* ChatGPT specific */
+[data-testid="send-button"] ~ .aurabot-enhance-btn,
+form .aurabot-enhance-btn {
+  right: 70px;
+}
+
+/* Claude specific */
+[data-testid="input-field"] ~ .aurabot-enhance-btn,
+[contenteditable="true"] ~ .aurabot-enhance-btn {
+  right: 70px;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .aurabot-enhance-btn {
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .aurabot-enhance-btn,
+  .aurabot-notification {
+    transition: none;
+  }
+  
+  .aurabot-spinner {
+    animation: none;
+    border-top-color: transparent;
+  }
+}
+
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+  .aurabot-enhance-btn {
+    right: 60px;
+    bottom: 10px;
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+  
+  .aurabot-enhance-btn span {
+    display: none;
+  }
+  
+  .aurabot-notification {
+    left: 20px;
+    right: 20px;
+    transform: translateY(-100px);
+  }
+  
+  .aurabot-notification.aurabot-show {
+    transform: translateY(0);
+  }
+}
