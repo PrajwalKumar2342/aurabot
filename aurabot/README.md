@@ -143,7 +143,31 @@ memory:
 
 ## Usage
 
-### Start the Service
+### Desktop App (Recommended)
+
+Build and run the native desktop application:
+
+```bash
+# Install Wails CLI (one-time)
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+# Run in development mode
+make dev-app
+
+# Build for Windows (.exe)
+make build-app-windows
+
+# Build for macOS (.app)
+make build-app-macos
+```
+
+The desktop app provides:
+- 📊 **Dashboard** - Visual overview of your memories and system status
+- 💾 **Memories Browser** - Search and browse captured memories
+- 💬 **Chat Interface** - Talk to your memory assistant
+- ⚙️ **Settings UI** - Configure without editing config files
+
+### Start the Service (CLI Mode)
 
 ```bash
 # Run Go service directly
@@ -211,20 +235,28 @@ mem0/
 │   │   ├── mem0_server.py       # Mem0 server
 │   │   └── local_model_server.py # Local model server
 │   └── tests/                   # Python tests
-├── go/                          # Go source code
-│   ├── go.mod
-│   ├── go.sum
-│   ├── main.go                  # Entry point
-│   ├── cmd/
-│   │   └── chat/
-│   │       └── main.go          # Chat CLI
-│   └── internal/
-│       ├── config/              # Configuration management
-│       ├── capture/             # Screen capture
-│       ├── llm/                 # LLM client
-│       ├── memory/              # Mem0 integration
-│       └── service/             # Orchestrator
-└── prompts/                     # Prompt templates (if any)
+└── go/                          # Go source code
+    ├── go.mod
+    ├── go.sum
+    ├── main.go                  # Entry point (CLI service)
+    ├── cmd/
+    │   ├── chat/                # Chat CLI tool
+    │   │   └── main.go
+    │   └── app/                 # Desktop app (Wails)
+    │       ├── main.go
+    │       ├── app.go
+    │       ├── app_test.go
+    │       └── frontend/
+    │           └── dist/
+    │               ├── index.html
+    │               ├── style.css
+    │               └── app.js
+    └── internal/
+        ├── config/              # Configuration management
+        ├── capture/             # Screen capture
+        ├── llm/                 # LLM client
+        ├── memory/              # Mem0 integration
+        └── service/             # Orchestrator
 ```
 
 ## Platform Notes
