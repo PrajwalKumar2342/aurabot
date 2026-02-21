@@ -74,12 +74,12 @@ func Load() (*Config, error) {
 		},
 		LLM: LLMConfig{
 			BaseURL:        "http://localhost:1234/v1",
-			Model:          "local-model",
+			Model:          "lfm2-350m",
 			MaxTokens:      512,
 			Temperature:    0.7,
 			TimeoutSeconds: 30,
 			CerebrasAPIKey: os.Getenv("CEREBRAS_API_KEY"),
-			CerebrasModel:  "gpt-oss-120b",
+			CerebrasModel:  "llama3.1-70b",
 		},
 		Memory: MemoryConfig{
 			APIKey:         "",
